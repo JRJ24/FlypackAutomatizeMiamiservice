@@ -1,0 +1,27 @@
+# Node.js
+node_modules/
+package-lock.json
+yarn.lock
+
+# Entorno
+
+
+# Build
+dist/
+build/
+.cache/
+coverage/
+
+# Configuración del editor
+.vscode/
+.idea/
+
+# Sistema Operativo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.env
+
+uploads/

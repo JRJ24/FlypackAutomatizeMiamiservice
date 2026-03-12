@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "types": ["express", "node", "jest"],
+    "module": "commonjs",
+    "esModuleInterop": true,
+    "target": "es6",
+    "moduleResolution": "node",
+    "sourceMap": true,
+    "outDir": "dist",
+    "lib": ["es2015", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true
+  }
+}
