@@ -59,7 +59,7 @@ const validatJWT = async (
   }
 };
 
-const deleteJWT = (token) => {
+const deleteJWT = (token:string) => {
   return new Promise((resolve, reject) => {
     jwt.verify(token, process.env.SECRETORPRIVATEKEY as string, (err, decoded) => {
       if (err) {
@@ -72,7 +72,7 @@ const deleteJWT = (token) => {
 };
 
 
-const generateJWT = (data) => {
+const generateJWT = (data: any) => {
   return new Promise((resolve, reject) => {
     const payload = { data };
     jwt.sign(

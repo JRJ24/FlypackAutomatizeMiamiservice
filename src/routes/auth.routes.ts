@@ -1,10 +1,8 @@
 import * as authController from "./../controllers/Auth.controller";
 
-import { check } from "express-validator";
 import express = require("express");
 import { validatJWT } from "../middlewares/token";
 import passport from "passport";
-// import { validate } from "../middlewares/validate";
 
 
 // import { validateFields } from "../middlewares/validate_fields";
