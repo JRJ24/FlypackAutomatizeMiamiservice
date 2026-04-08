@@ -16,6 +16,10 @@ const ProcessModelSchema = new Schema<IProcessmodel>(
       required: true,
       unique: true
     },
+    description: {
+      type: String,
+      required: false,
+    },
     isActive: {
       type: Boolean,
       required: true,

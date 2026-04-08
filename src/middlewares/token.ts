@@ -61,7 +61,7 @@ const validatJWT = async (
 
 const deleteJWT = (token) => {
   return new Promise((resolve, reject) => {
-    jwt.verify(token, process.env.SECRETORPRIVATEKEY, (err, decoded) => {
+    jwt.verify(token, process.env.SECRETORPRIVATEKEY as string, (err, decoded) => {
       if (err) {
         reject("Invalid token");
       } else {
@@ -77,7 +77,7 @@ const generateJWT = (data) => {
     const payload = { data };
     jwt.sign(
       payload,
-      process.env.SECRETORPRIVATEKEY,
+      process.env.SECRETORPRIVATEKEY as string,
       {
         expiresIn: "168h",
       },

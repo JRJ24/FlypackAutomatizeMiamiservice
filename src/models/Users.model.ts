@@ -1,5 +1,7 @@
 import { model, Schema } from "mongoose";
 import { IUserModel } from "../interfaces/IUsersmodel";
+import { decrypt, encrypt } from "../helpers/crypto";
+import crypto from "crypto";
 
 const UsersSchema = new Schema<IUserModel>(
   {
@@ -10,6 +12,10 @@ const UsersSchema = new Schema<IUserModel>(
     email: {
       type: String,
       required: true,
+    },
+    emailIndex: {
+      type: String,
+      unique: true,
     },
     password: {
       type: String,
@@ -47,5 +53,30 @@ const UsersSchema = new Schema<IUserModel>(
     versionKey: false,
   },
 );
+
+UsersSchema.pre("save", function () {
+  if (this.isModified("name")) {
+    this.name = encrypt(this.name);
+  }
+
+  if (this.isModified("email")) {
+    const plainEmail = this.email;
+    this.emailIndex = crypto
+      .createHash("sha256")
+      .update(plainEmail)
+      .digest("hex");
+
+    this.email = encrypt(plainEmail);
+  }
+});
+
+UsersSchema.post("init", function (doc) {
+  try {
+    if (doc.name) doc.name = decrypt(doc.name);
+    if (doc.email) doc.email = decrypt(doc.email);
+  } catch (e) {
+    console.warn("No se pudo desencriptar el documento:", doc._id);
+  }
+});
 
 export default model<IUserModel>("Users", UsersSchema);

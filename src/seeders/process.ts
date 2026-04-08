@@ -10,11 +10,13 @@ const processRouterSeeder = async () => {
           nameProcess: "Pallets",
           icon: "LayoutPanelTop",
           path: "/pallets",
+          description: ""
         },
         {
           nameProcess: "Suitcases",
           icon: "Luggage",
           path: "/suitcases",
+          description: ""
         },
       ];
 
