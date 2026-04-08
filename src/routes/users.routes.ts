@@ -9,38 +9,38 @@ const userRouter: express.Router = express.Router();
 
 userRouter.get(
 	'/get',
-	validatJWT,
+	// validatJWT,
 	Users.GetUsers,
 )
 
 userRouter.get(
 	'/delete',
-	validatJWT,
-	deleteJWT,
+	// validatJWT,
+	// deleteJWT,
 	Users.deleteUser
 )
 
 userRouter.post(
 	'/',
-	generateJWT,
+	// generateJWT,
 	Users.createUser,
 )
 
 userRouter.put(
 	'/',
-	validatJWT,
+	// validatJWT,
 	Users.updatePutUser
 )
 
 userRouter.patch(
 	'/updateEmail',
-	validatJWT,
+	// validatJWT,
 	Users.updateEmail
 )
 
 userRouter.patch(
 	'/updatePassword',
-	validatJWT,
+	// validatJWT,
 	Users.updatePassword
 )
 

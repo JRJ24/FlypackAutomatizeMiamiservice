@@ -13,6 +13,7 @@ import debug from "debug";
 // import client, { shutdownPostHog } from "./helpers/postHog";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { initializeSocket } from "./Socket";
+import processRouterSeeder from "./seeders/process";
 
 const app: express.Application = express();
 const server = http.createServer(app);
@@ -41,7 +42,7 @@ app.use(
     origin: origin,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     credentials: true,
-    allowHeaders: ["Content-Type", "Authorization", "x-access-token"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-access-token"],
   }),
 );
 
@@ -74,6 +75,7 @@ const PORT = process.env.PORT || 5000;
 
 dbConnection()
   .then(async () => {
+    await processRouterSeeder();
     server.listen(PORT, async () => {
       const io = initializeSocket(server);
       app.set("socketio", io);

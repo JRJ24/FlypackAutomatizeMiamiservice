@@ -14,6 +14,7 @@ const ProcessModelSchema = new Schema<IProcessmodel>(
     path: {
       type: String,
       required: true,
+      unique: true
     },
     isActive: {
       type: Boolean,

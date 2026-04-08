@@ -1,33 +1,38 @@
 import * as Process from '@/../../src/controllers/Process.controller'
 import multer from 'multer'
 const { check } = require("express-validator");
-import { validatJWT, deleteJWT, generateJWT } from '@/../../src/middlewares/token';
+import { validatJWT } from '@/../../src/middlewares/token';
 import express = require('express');
 
 const processRouter: express.Router = express.Router();
 
 processRouter.get(
-  '/get',
-  validatJWT,
+  '/',
+  // validatJWT,
   Process.getProcess,
 )
 
 processRouter.get(
-  '/delete',
-  validatJWT,
-  deleteJWT,
+  '/nolimit',
+  // validatJWT,
+  Process.getProcessNoLimit,
+)
+
+processRouter.delete(
+  '/',
+  // validatJWT,
   Process.deleteProcess
 )
 
 processRouter.post(
   '/',
-  generateJWT,
+  // validatJWT,
   Process.createProcess,
 )
 
 processRouter.put(
   '/',
-  validatJWT,
+  // validatJWT,
   Process.updateProcess
 )
 
