@@ -12,6 +12,7 @@ const UsersSchema = new Schema<IUserModel>(
     email: {
       type: String,
       required: true,
+      unique: true
     },
     emailIndex: {
       type: String,

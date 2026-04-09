@@ -1,4 +1,6 @@
 import { Request, Response } from "express";
+import UsersModel from "../models/Users.model";
+import { hashPassword } from "../helpers/hashpassword";
 
 const GetUsers = async (req: Request, res: Response) => {
   try {
@@ -23,7 +25,29 @@ const GetUsers = async (req: Request, res: Response) => {
 const createUser = async (req: Request, res: Response) => {
   try {
     const { ...data } = req.body;
+
+    if (data.password) {
+      data.password = await hashPassword(data.password);
+    }
+
+    const newUser = await UsersModel.create(data);
+
+    if (!newUser) {
+      return res.status(404).json({
+        ok: false,
+        message: "No User create",
+        mensaje: "No user creada",
+      });
+    }
+
+    return res.status(201).json({
+      ok: true,
+      message: "User created",
+      mensaje: "User creado",
+      data: newUser,
+    });
   } catch (error) {
+    console.log(error);
     return res.status(500).json({
       ok: false,
       message: "ERROR INTERNAL SERVER",
@@ -85,4 +109,11 @@ const deleteUser = async (req: Request, res: Response) => {
   }
 };
 
-export { GetUsers, updatePutUser, createUser, updatePassword, updateEmail, deleteUser };
+export {
+  GetUsers,
+  updatePutUser,
+  createUser,
+  updatePassword,
+  updateEmail,
+  deleteUser,
+};
