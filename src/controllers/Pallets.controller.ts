@@ -16,6 +16,8 @@ const getPallets = async(req: Request, res: Response) => {
 
 const createPallets = async(req: Request, res: Response) => {
   try {
+    const { ...data } = req.body;
+    
     
   } catch (error) {
     return res.status(500).json({

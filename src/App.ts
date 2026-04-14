@@ -14,6 +14,7 @@ import debug from "debug";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { initializeSocket } from "./Socket";
 import processRouterSeeder from "./seeders/process";
+import priceSeeder from "./seeders/prices";
 
 const app: express.Application = express();
 const server = http.createServer(app);
@@ -76,6 +77,7 @@ const PORT = process.env.PORT || 5000;
 dbConnection()
   .then(async () => {
     await processRouterSeeder();
+    await priceSeeder();
     server.listen(PORT, async () => {
       const io = initializeSocket(server);
       app.set("socketio", io);

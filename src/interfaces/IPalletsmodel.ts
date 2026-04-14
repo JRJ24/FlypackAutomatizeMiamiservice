@@ -1,28 +1,40 @@
 export interface IPalletsMain {
-  clientName: string,
-  date: string,
+  clientName: string;
+  date: string;
   motherGuide: string;
-  pallets: IPalletsDetails[];
+  pallet: IPalletSingle;
   isDelete: boolean;
   isActive: boolean;
   createAt: Date;
   updateAt: Date;
 }
 
+
+export interface IPalletSingle {
+  palletDescription: string;
+  pallets: IPalletsDetails[];
+  calcPallet: IPalletsCalc;
+}
+
 export interface IPalletsDetails {
-  model: string,
-  inchs: string,
-  unitPrice: number,
-  quantityUnit: Number,
-  weightLB: number,
-  weightKG: number,
-  costLbUS: number,
-  customDuty: number,
-  totalUSD: number,
-  totalRD: number,
-  ADM: number,
-  caribeTrans: number,
-  totalCost: number,
-  totalUnitPrice: number,
-  utility: number,
+  model: string;
+  inchs: string;
+  descriptionModel: string;
+  unitPrice: number;
+  quantityUnit: number;
+  totalUnitPrice: number;
+}
+
+export interface IPalletsCalc {
+  weightLB: number;
+  weightKG: number;
+  costLbUS: number;
+  customDuty: number;
+  totalUSD: number;
+  totalRD: number;
+  ADM: number;
+  caribeTrans: number;
+  totalCost: number;
+  totalPrice: number;
+  utility: number;
 }
