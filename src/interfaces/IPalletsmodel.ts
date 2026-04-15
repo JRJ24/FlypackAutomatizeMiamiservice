@@ -38,3 +38,24 @@ export interface IPalletsCalc {
   totalPrice: number;
   utility: number;
 }
+
+
+export interface IPalletNew {
+  clientName: string;
+  date: string;
+  motherGuide: string;
+  pallet: {
+    palletDescription: string;
+    pallets: [{
+      model: string;
+      inchs: string;
+      descriptionModel: string;
+      unitPrice: number;
+      quantityUnit: number;
+      totalUnitPrice: number
+    }];
+    calcPallet: {
+      weightLB: number;
+    }
+  }
+}
