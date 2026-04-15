@@ -16,6 +16,111 @@ const getPallets = async (req: Request, res: Response) => {
   }
 };
 
+const getPalletsByMotherGuide = async (req: Request, res: Response) => {
+  try {
+    const { motherGuide } = req.params;
+
+    if (!motherGuide) {
+      return res.status(400).json({
+        ok: false,
+        message: "No mother guide",
+        mensaje: "No guia madre",
+        data: null,
+      });
+    }
+
+    const pallets = await PalletsModel.aggregate([
+      {
+        $match: {
+          motherGuide: motherGuide,
+          isDelete: false,
+          isActive: true,
+        },
+      },
+      {
+        $group: {
+          _id: { $trim: { input: "$clientName" } },
+          clientName: { $first: "$clientName" },
+          date: { $first: "$date" },
+          motherGuide: { $first: "$motherGuide" },
+          status: { $first: "$status" },
+          totalPalletsCount: { $sum: { $size: "$pallet.pallets" } },
+          totalWeightLB: { $sum: "$pallet.calcPallet.weightLB" },
+        },
+      },
+      { $sort: { clientName: 1 } },
+    ]);
+
+    if (!pallets) {
+      return res.status(404).json({
+        ok: false,
+        message: "No founded",
+        mensaje: "No encontrado",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Pallets by Mother Guide",
+      mensaje: "Pallets con la guia madre",
+      data: pallets,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "Error internal server",
+      mensaje: "Error interno del servidor",
+      data: null,
+    });
+  }
+};
+
+const getPalletsByClient = async (req: Request, res: Response) => {
+  try {
+    const { clientName, motherGuide } = req.params;
+
+    if (!clientName || motherGuide) {
+      return res.status(400).json({
+        ok: false,
+        message: "No mother guide and not id",
+        mensaje: "No guia madre y no id",
+        data: null,
+      });
+    }
+
+    const client = String(clientName);
+
+    let query = {
+      clientName: { $regex: new RegExp(`^${client.trim()}$`, "i") },
+      motherGuide: motherGuide,
+    };
+    const pallets = await PalletsModel.find(query).sort({ createAt: -1 });
+
+    if (!pallets || pallets.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        message: "No founded",
+        mensaje: "No encontrado",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Pallets by _id",
+      mensaje: "Pallets con la _id",
+      data: pallets,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "Error internal server",
+      mensaje: "Error interno del servidor",
+      data: null,
+    });
+  }
+};
 const createPallets = async (req: Request, res: Response) => {
   try {
     const data: IPalletNew = req.body;
@@ -29,10 +134,14 @@ const createPallets = async (req: Request, res: Response) => {
       });
     }
 
+    const count = await PalletsModel.countDocuments({
+      motherGuide: data.motherGuide,
+    });
     const { pallets, calcPallet } = data.pallet;
 
     const weightLB = calcPallet.weightLB;
 
+    console.log(weightLB);
     const totalPrice = pallets.reduce((acc, item) => {
       return acc + (item.totalUnitPrice || 0);
     }, 0);
@@ -48,14 +157,14 @@ const createPallets = async (req: Request, res: Response) => {
       });
     }
 
-    const palletCalc = CalcCost(totalPrice, maintenance, weightLB);
-
+    const palletCalc = await CalcCost(weightLB, maintenance, totalPrice);
+    const palletDescription = `PACKING LIST PLT#${count + 1} (${weightLB})`;
     const newPallet = {
       clientName: data.clientName,
       date: data.date,
       motherGuide: data.motherGuide,
       pallet: {
-        palletDescription: data.pallet.palletDescription,
+        palletDescription: palletDescription,
         pallets: data.pallet.pallets,
         calcPallet: {
           ...palletCalc,
@@ -114,4 +223,11 @@ const deletePallets = async (req: Request, res: Response) => {
   }
 };
 
-export { getPallets, createPallets, updatePallets, deletePallets };
+export {
+  getPallets,
+  createPallets,
+  updatePallets,
+  deletePallets,
+  getPalletsByMotherGuide,
+  getPalletsByClient,
+};

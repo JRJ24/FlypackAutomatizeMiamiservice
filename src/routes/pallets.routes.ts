@@ -16,6 +16,19 @@ palletRouter.get(
   palletsController.getPallets
 )
 
+palletRouter.get(
+  '/motherGuide/:motherGuide',
+  validatJWT,
+  palletsController.getPalletsByMotherGuide
+)
+
+palletRouter.get(
+  '/client/:clientName/:motherGuide',
+  validatJWT,
+  palletsController.getPalletsByClient
+)
+
+
 palletRouter.put(
   '/',
   validatJWT,

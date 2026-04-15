@@ -3,6 +3,7 @@ export interface IPalletsMain {
   date: string;
   motherGuide: string;
   pallet: IPalletSingle;
+  status: string;
   isDelete: boolean;
   isActive: boolean;
   createAt: Date;

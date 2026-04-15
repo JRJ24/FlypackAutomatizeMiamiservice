@@ -127,6 +127,11 @@ const PalletsMainSchema = new Schema<IPalletsMain>(
       type: PalletSingleSchema,
       required: true,
     },
+    status: {
+      type: String,
+      enum: ["Invoiced", "Not invoiced"],
+      default: "Not invoiced"
+    },
     isDelete: {
       type: Boolean,
       required: true,
