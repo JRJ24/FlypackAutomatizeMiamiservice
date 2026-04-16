@@ -4,6 +4,7 @@ import MaintenanceCostModel from "../models/MaintenanceCost.model";
 import { CalcCost } from "../helpers/calcCost";
 import { IPalletNew, IPalletsMain } from "../interfaces/IPalletsmodel";
 
+// No modified
 const getPallets = async (req: Request, res: Response) => {
   try {
   } catch (error) {
@@ -16,6 +17,7 @@ const getPallets = async (req: Request, res: Response) => {
   }
 };
 
+// Importants
 const getPalletsByMotherGuide = async (req: Request, res: Response) => {
   try {
     const { motherGuide } = req.params;
@@ -142,6 +144,7 @@ const getPalletsByClient = async (req: Request, res: Response) => {
     });
   }
 };
+
 const createPallets = async (req: Request, res: Response) => {
   try {
     const data: IPalletNew = req.body;
@@ -220,6 +223,7 @@ const createPallets = async (req: Request, res: Response) => {
   }
 };
 
+// No modified
 const updatePallets = async (req: Request, res: Response) => {
   try {
   } catch (error) {
