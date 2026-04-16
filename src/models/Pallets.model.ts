@@ -16,6 +16,10 @@ const PalletsDetailsSchema = new Schema<IPalletsDetails>(
       type: String,
       required: true,
     },
+    descriptionModel: {
+      type: String,
+      required: true,
+    },
     unitPrice: {
       type: Number,
       required: true,
@@ -130,7 +134,7 @@ const PalletsMainSchema = new Schema<IPalletsMain>(
     status: {
       type: String,
       enum: ["Invoiced", "Not invoiced"],
-      default: "Not invoiced"
+      default: "Not invoiced",
     },
     isDelete: {
       type: Boolean,

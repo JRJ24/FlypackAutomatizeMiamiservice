@@ -79,8 +79,8 @@ const getPalletsByMotherGuide = async (req: Request, res: Response) => {
 const getPalletsByClient = async (req: Request, res: Response) => {
   try {
     const { clientName, motherGuide } = req.params;
-
-    if (!clientName || motherGuide) {
+    console.log(clientName, " - ", motherGuide);
+    if (!clientName || !motherGuide) {
       return res.status(400).json({
         ok: false,
         message: "No mother guide and not id",
@@ -95,7 +95,28 @@ const getPalletsByClient = async (req: Request, res: Response) => {
       clientName: { $regex: new RegExp(`^${client.trim()}$`, "i") },
       motherGuide: motherGuide,
     };
-    const pallets = await PalletsModel.find(query).sort({ createAt: -1 });
+
+    const pallets = await PalletsModel.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: {
+            clientName: "$clientName",
+            motherGuide: "$motherGuide",
+          },
+          allPallets: {
+            $push: {
+              description: "$pallet.palletDescription",
+              items: "$pallet.pallets",
+              status: "$status",
+            },
+          },
+
+          totalPalletsCount: { $sum: 1 },
+          lastUpdated: { $max: "$updatedAt" },
+        },
+      },
+    ]);
 
     if (!pallets || pallets.length === 0) {
       return res.status(404).json({
@@ -158,7 +179,7 @@ const createPallets = async (req: Request, res: Response) => {
     }
 
     const palletCalc = await CalcCost(weightLB, maintenance, totalPrice);
-    const palletDescription = `PACKING LIST PLT#${count + 1} (${weightLB})`;
+    const palletDescription = `PACKING LIST PLT#${count + 1} (${weightLB} LBS)`;
     const newPallet = {
       clientName: data.clientName,
       date: data.date,
