@@ -2,7 +2,13 @@ import { Request, Response } from "express";
 import PalletsModel from "../models/Pallets.model";
 import MaintenanceCostModel from "../models/MaintenanceCost.model";
 import { CalcCost } from "../helpers/calcCost";
-import { IPalletNew, IPalletsMain } from "../interfaces/IPalletsmodel";
+import {
+  IPalletNew,
+  IPalletsDetails,
+  IPalletsMain,
+} from "../interfaces/IPalletsmodel";
+import PriceModel from "../models/PriceModel";
+import InventoryModel from "../models/Inventory.model";
 
 // No modified
 const getPallets = async (req: Request, res: Response) => {
@@ -81,64 +87,38 @@ const getPalletsByMotherGuide = async (req: Request, res: Response) => {
 const getPalletsByClient = async (req: Request, res: Response) => {
   try {
     const { clientName, motherGuide } = req.params;
-    console.log(clientName, " - ", motherGuide);
+
     if (!clientName || !motherGuide) {
       return res.status(400).json({
         ok: false,
-        message: "No mother guide and not id",
-        mensaje: "No guia madre y no id",
+        mensaje: "Nombre del cliente y guía madre son obligatorios",
         data: null,
       });
     }
 
-    const client = String(clientName);
-
-    let query = {
-      clientName: { $regex: new RegExp(`^${client.trim()}$`, "i") },
+    const palletDoc = await PalletsModel.findOne({
+      clientName: clientName,
       motherGuide: motherGuide,
-    };
+      isDelete: false,
+    }).lean();
 
-    const pallets = await PalletsModel.aggregate([
-      { $match: query },
-      {
-        $group: {
-          _id: {
-            clientName: "$clientName",
-            motherGuide: "$motherGuide",
-          },
-          allPallets: {
-            $push: {
-              description: "$pallet.palletDescription",
-              items: "$pallet.pallets",
-              status: "$status",
-            },
-          },
-
-          totalPalletsCount: { $sum: 1 },
-          lastUpdated: { $max: "$updatedAt" },
-        },
-      },
-    ]);
-
-    if (!pallets || pallets.length === 0) {
+    if (!palletDoc) {
       return res.status(404).json({
         ok: false,
-        message: "No founded",
-        mensaje: "No encontrado",
+        mensaje: "No se encontró el despacho para este cliente y guía",
         data: null,
       });
     }
 
     return res.status(200).json({
       ok: true,
-      message: "Pallets by _id",
-      mensaje: "Pallets con la _id",
-      data: pallets,
+      mensaje: "Datos obtenidos con éxito",
+      data: palletDoc,
     });
   } catch (error) {
+    console.error(error);
     return res.status(500).json({
       ok: false,
-      message: "Error internal server",
       mensaje: "Error interno del servidor",
       data: null,
     });
@@ -153,23 +133,70 @@ const createPallets = async (req: Request, res: Response) => {
       return res.status(400).json({
         ok: false,
         message: "No data",
-        mensaje: "No data",
+        mensaje: "No hay datos",
         data: null,
       });
     }
 
-    const count = await PalletsModel.countDocuments({
-      motherGuide: data.motherGuide,
-    });
     const { pallets, calcPallet } = data.pallet;
-
     const weightLB = calcPallet.weightLB;
 
-    console.log(weightLB);
-    const totalPrice = pallets.reduce((acc, item) => {
-      return acc + (item.totalUnitPrice || 0);
-    }, 0);
+    // 1. Buscar precios unitarios en la BD y calcular totales por ítem
+    let globalTotalPrice = 0;
+    const enrichedPallets: IPalletsDetails[] = [];
 
+    const isSpecial: boolean = data.clientName === "Daniel" ? true : false;
+
+    for (const item of pallets) {
+      // Reemplaza "ProductsModel" con el modelo real donde guardas los precios
+      const pricesInfo = await PriceModel.findOne({
+        model: item.model,
+        inches: item.inchs,
+        isSpecial: isSpecial,
+      });
+
+      const inventoryInfo = await InventoryModel.findOne({
+        brandTV: item.model,
+        inchs: item.inchs,
+        client: data.clientName,
+      });
+
+      // Si no encuentra el producto, asignamos 0 o el valor por defecto que prefieras
+      const unitPrice = pricesInfo ? pricesInfo.unitPrice : 0;
+      const totalUnitPrice = unitPrice * item.quantityUnit;
+
+      if (inventoryInfo?.quantity) {
+        const restInventoryStock = inventoryInfo?.quantity - item.quantityUnit;
+
+        const UpdateQtyInventory = await InventoryModel.findByIdAndUpdate(
+          inventoryInfo._id,
+          { quantity: restInventoryStock },
+          { returnDocument: 'after' }
+        );
+
+        if (!UpdateQtyInventory) {
+          return res.status(400).json({
+            ok: false,
+            message: "The inventory has not decreased",
+            mensaje: "No ha disminuido el inventario",
+            data: null,
+          });
+        }
+      }
+
+      globalTotalPrice += totalUnitPrice;
+
+      enrichedPallets.push({
+        model: item.model,
+        inchs: item.inchs,
+        descriptionModel: item.descriptionModel,
+        quantityUnit: item.quantityUnit,
+        unitPrice: unitPrice,
+        totalUnitPrice: totalUnitPrice,
+      });
+    }
+
+    // 2. Traer costo de mantenimiento
     const maintenance = await MaintenanceCostModel.findOne();
 
     if (!maintenance) {
@@ -181,27 +208,48 @@ const createPallets = async (req: Request, res: Response) => {
       });
     }
 
-    const palletCalc = await CalcCost(weightLB, maintenance, totalPrice);
-    const palletDescription = `PACKING LIST PLT#${count + 1} (${weightLB} LBS)`;
-    const newPallet = {
-      clientName: data.clientName,
-      date: data.date,
+    // 3. Pasar los datos a la función CalcCost
+    const palletCalc = await CalcCost(weightLB, maintenance, globalTotalPrice);
+
+    // 4. Calcular el número del pallet actual para la guía madre
+    const existingGuide = await PalletsModel.findOne({
       motherGuide: data.motherGuide,
-      pallet: {
-        palletDescription: palletDescription,
-        pallets: data.pallet.pallets,
-        calcPallet: {
-          ...palletCalc,
-        },
-      },
+    });
+
+    // Si la guía ya existe, contamos cuántos pallets tiene, si no, empezamos en 0
+    const currentPalletCount =
+      existingGuide && existingGuide.pallet ? existingGuide.pallet.length : 0;
+    const palletDescription = `PACKING LIST PLT#${currentPalletCount + 1} (${weightLB} LBS)`;
+
+    // 5. Armar el objeto del nuevo pallet individual
+    const newPalletSingle = {
+      palletDescription: palletDescription,
+      pallets: enrichedPallets,
+      calcPallet: palletCalc,
     };
 
-    const saved = await PalletsModel.create(newPallet);
+    // 6. Guardar en la base de datos (Agrupar o Crear nuevo documento)
+    const saved = await PalletsModel.findOneAndUpdate(
+      { motherGuide: data.motherGuide },
+      {
+        $setOnInsert: {
+          clientName: data.clientName,
+          date: data.date,
+          status: "Not invoiced",
+          isActive: true,
+          isDelete: false,
+        },
+        $push: {
+          pallet: newPalletSingle, // Agrega el pallet al arreglo
+        },
+      },
+      { upsert: true, new: true },
+    );
 
     if (!saved) {
       return res.status(400).json({
         ok: false,
-        message: "No saved",
+        message: "Not saved",
         mensaje: "No guardado",
         data: null,
       });
@@ -210,7 +258,7 @@ const createPallets = async (req: Request, res: Response) => {
     return res.status(201).json({
       ok: true,
       message: "Saved",
-      mensaje: "Guardado",
+      mensaje: "Guardado correctamente",
       data: saved,
     });
   } catch (error) {

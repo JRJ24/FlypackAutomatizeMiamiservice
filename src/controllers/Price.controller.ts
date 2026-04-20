@@ -70,6 +70,36 @@ const getPrice = async (req: Request, res: Response) => {
   }
 };
 
+const getPriceModel = async (req: Request, res: Response) => {
+  try {
+    const [models, inches] = await Promise.all([
+      PriceModel.distinct("model"),
+      PriceModel.distinct("inches"),
+    ]);
+
+    if (!models || !inches) {
+      return res.status(404).json({
+        ok: false,
+        message: "New price no were Create",
+        mensaje: "Nuevo precio no fue creado",
+        data: null,
+      });
+    }
+
+    const payload = {
+      models: models,
+      inches: inches,
+    };
+
+    return res.status(200).json({
+      ok: true,
+      message: "Sucess",
+      mensaje: "Exito",
+      data: payload,
+    });
+  } catch (error) {}
+};
+
 const updatePrice = async (req: Request, res: Response) => {
   try {
   } catch (error) {
@@ -94,4 +124,4 @@ const deletePrice = async (req: Request, res: Response) => {
   }
 };
 
-export { newPrice, getPrice, updatePrice, deletePrice };
+export { newPrice, getPrice, updatePrice, deletePrice, getPriceModel };

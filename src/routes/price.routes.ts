@@ -16,6 +16,13 @@ priceRouter.get(
   priceController.getPrice
 )
 
+priceRouter.get(
+  '/model',
+  validatJWT,
+  priceController.getPriceModel
+)
+
+
 priceRouter.put(
   '/',
   validatJWT,

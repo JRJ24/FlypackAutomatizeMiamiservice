@@ -4,7 +4,6 @@ import { hashPassword } from "../helpers/hashpassword";
 
 const GetUsers = async (req: Request, res: Response) => {
   try {
-    console.log("Hola si estoy funcionando");
 
     return res.status(200).json({
       ok: true,
@@ -47,7 +46,6 @@ const createUser = async (req: Request, res: Response) => {
       data: newUser,
     });
   } catch (error) {
-    console.log(error);
     return res.status(500).json({
       ok: false,
       message: "ERROR INTERNAL SERVER",

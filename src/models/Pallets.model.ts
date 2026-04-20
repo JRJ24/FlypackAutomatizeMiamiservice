@@ -128,7 +128,7 @@ const PalletsMainSchema = new Schema<IPalletsMain>(
       required: true,
     },
     pallet: {
-      type: PalletSingleSchema,
+      type: [PalletSingleSchema],
       required: true,
     },
     status: {

@@ -3,30 +3,33 @@ import ProcessModel from "../models/Process.model";
 
 const processRouterSeeder = async () => {
   try {
-    const count = await ProcessModel.countDocuments();
-    if (count === 0) {
-      const processRoutesData: IProcess[] = [
-        {
-          nameProcess: "Pallets",
-          icon: "LayoutPanelTop",
-          path: "/pallets",
-          description: ""
-        },
-        {
-          nameProcess: "Suitcases",
-          icon: "Luggage",
-          path: "/suitcases",
-          description: ""
-        },
-      ];
+    const processRoutesData: IProcess[] = [
+      {
+        nameProcess: "Pallets",
+        icon: "LayoutPanelTop",
+        path: "/pallets",
+        description: "",
+      },
+      {
+        nameProcess: "Suitcases",
+        icon: "Luggage",
+        path: "/suitcases",
+        description: "",
+      },
+      {
+        nameProcess: "Inventory",
+        icon: "CirclePile",
+        path: "/inventory",
+        description: "",
+      },
+    ];
 
-      for (const processData of processRoutesData) {
-        const existingRoute = await ProcessModel.findOne({
-          path: processData.path,
-        });
-        if (!existingRoute) {
-          await ProcessModel.create(processData);
-        }
+    for (const processData of processRoutesData) {
+      const existingRoute = await ProcessModel.findOne({
+        path: processData.path,
+      });
+      if (!existingRoute) {
+        await ProcessModel.create(processData);
       }
     }
   } catch (error) {

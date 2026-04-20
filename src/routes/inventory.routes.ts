@@ -6,14 +6,26 @@ const inventoryRouter = express.Router();
 
 inventoryRouter.post(
   '/',
-  validatJWT,
+  // validatJWT,
   InventoryController.createInventory
 )
 
 inventoryRouter.get(
-  '/',
+  '/client',
+  validatJWT,
+  InventoryController.getInventoryClient,
+)
+
+inventoryRouter.get(
+  '/:client',
   validatJWT,
   InventoryController.getInventory,
+)
+
+inventoryRouter.post(
+  '/quantity',
+  validatJWT,
+  InventoryController.getQuantityOfClient,
 )
 
 inventoryRouter.patch(

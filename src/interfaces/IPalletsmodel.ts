@@ -2,7 +2,7 @@ export interface IPalletsMain {
   clientName: string;
   date: string;
   motherGuide: string;
-  pallet: IPalletSingle;
+  pallet: DiskContainers[];
   status: string;
   isDelete: boolean;
   isActive: boolean;
@@ -10,7 +10,9 @@ export interface IPalletsMain {
   updateAt: Date;
 }
 
-
+export interface DiskContainers {
+  disk: IPalletSingle[];
+}
 export interface IPalletSingle {
   palletDescription: string;
   pallets: IPalletsDetails[];
@@ -47,14 +49,14 @@ export interface IPalletNew {
   motherGuide: string;
   pallet: {
     palletDescription: string;
-    pallets: [{
+    pallets: {
       model: string;
       inchs: string;
       descriptionModel: string;
       unitPrice: number;
       quantityUnit: number;
       totalUnitPrice: number
-    }];
+    }[];
     calcPallet: {
       weightLB: number;
     }
