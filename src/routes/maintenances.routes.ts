@@ -11,33 +11,9 @@ maintenanceRouter.get(
 )
 
 maintenanceRouter.patch(
-  '/ADM',
+  '/',
   validatJWT,
-  maintenancesController.UpdateADMMaintenance
-)
-
-maintenanceRouter.patch(
-  '/kgV',
-  validatJWT,
-  maintenancesController.UpdateKgValMaintenance
-)
-
-maintenanceRouter.patch(
-  '/dollar',
-  validatJWT,
-  maintenancesController.UpdateDollarCostMaintenance
-)
-
-maintenanceRouter.patch(
-  '/rate',
-  validatJWT,
-  maintenancesController.UpdateRateMaintenance
-)
-
-maintenanceRouter.patch(
-  '/custom',
-  validatJWT,
-  maintenancesController.UpdateCustomDutyValMaintenance
+  maintenancesController.UpdateMaintenances
 )
 
 

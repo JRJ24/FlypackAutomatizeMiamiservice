@@ -25,7 +25,7 @@ const newPrice = async (req: Request, res: Response) => {
       });
     }
 
-    return res.status(404).json({
+    return res.status(201).json({
       ok: true,
       message: "Sucess",
       mensaje: "Exito",
@@ -54,7 +54,7 @@ const getPrice = async (req: Request, res: Response) => {
       });
     }
 
-    return res.status(404).json({
+    return res.status(200).json({
       ok: true,
       message: "Sucess",
       mensaje: "Exito",

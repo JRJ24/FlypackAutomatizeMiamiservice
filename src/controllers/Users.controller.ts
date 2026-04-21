@@ -4,12 +4,21 @@ import { hashPassword } from "../helpers/hashpassword";
 
 const GetUsers = async (req: Request, res: Response) => {
   try {
+    const users = await UsersModel.find({ isActive: true, isDelete: false });
 
+    if(!users || users.length < 1){
+      return res.status(404).json({
+        ok: false,
+        message: "No users",
+        mensaje: "No usuarios",
+        data: []
+      })
+    }
     return res.status(200).json({
       ok: true,
       message: "hola",
       mensaje: "hello",
-      data: null,
+      data: users,
     });
   } catch (error) {
     return res.status(500).json({
