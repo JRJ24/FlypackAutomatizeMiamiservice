@@ -1,18 +1,20 @@
 import { Request, Response } from "express";
 import UsersModel from "../models/Users.model";
 import { hashPassword } from "../helpers/hashpassword";
+import { Types } from "mongoose";
+const crypto = require("crypto");
 
 const GetUsers = async (req: Request, res: Response) => {
   try {
-    const users = await UsersModel.find({ isActive: true, isDelete: false });
+    const users = await UsersModel.find({ isDelete: false });
 
-    if(!users || users.length < 1){
+    if (!users || users.length < 1) {
       return res.status(404).json({
         ok: false,
         message: "No users",
         mensaje: "No usuarios",
-        data: []
-      })
+        data: [],
+      });
     }
     return res.status(200).json({
       ok: true,
@@ -33,9 +35,14 @@ const GetUsers = async (req: Request, res: Response) => {
 const createUser = async (req: Request, res: Response) => {
   try {
     const { ...data } = req.body;
-
+    console.log(data, "hola");
     if (data.password) {
       data.password = await hashPassword(data.password);
+      data.mustchangePassword = false;
+    } else {
+      const passwordGenerated = crypto.randomBytes(6).toString("hex");
+      data.password = await hashPassword(passwordGenerated);
+      data.mustchangePassword = true;
     }
 
     const newUser = await UsersModel.create(data);
@@ -55,6 +62,7 @@ const createUser = async (req: Request, res: Response) => {
       data: newUser,
     });
   } catch (error) {
+    console.error(error);
     return res.status(500).json({
       ok: false,
       message: "ERROR INTERNAL SERVER",
@@ -66,7 +74,34 @@ const createUser = async (req: Request, res: Response) => {
 
 const updatePutUser = async (req: Request, res: Response) => {
   try {
-    const { ...data } = req.body;
+    const { _id, ...data } = req.body;
+
+    if (!Types.ObjectId.isValid(_id) || !data) {
+      return res.status(400).json({
+        ok: false,
+        message: "No data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    const update = await UsersModel.findByIdAndUpdate(_id, data, { new: true });
+
+    if (!update) {
+      return res.status(404).json({
+        ok: false,
+        message: "No data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    return res.status(201).json({
+      ok: true,
+      message: "Update",
+      mensaje: "Actualizado",
+      data: update,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -103,9 +138,87 @@ const updateEmail = async (req: Request, res: Response) => {
   }
 };
 
-const deleteUser = async (req: Request, res: Response) => {
+const disableUser = async (req: Request, res: Response) => {
   try {
-    const { _id } = req.params;
+    const { _id } = req.body;
+
+    console.log(_id);
+
+    if (!_id) {
+      return res.status(400).json({
+        ok: false,
+        message: "No data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    const disabled = await UsersModel.findByIdAndUpdate(
+      _id,
+      [{ $set: { isActive: { $not: "$isActive" } } }],
+      { new: true, updatePipeline: true },
+    );
+
+    if (!disabled) {
+      return res.status(404).json({
+        ok: false,
+        message: "No update",
+        mensaje: "No actualizado",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Disabled",
+      mensaje: "Deshabilitado",
+      data: disabled,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL SERVER",
+      mensaje: "ERROR INTERNO DEL SERVIDOR",
+      data: null,
+    });
+  }
+};
+
+const deletedUser = async (req: Request, res: Response) => {
+  try {
+    const { _id } = req.body;
+
+    if (!_id) {
+      return res.status(400).json({
+        ok: false,
+        message: "No data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    const deleted = await UsersModel.findByIdAndUpdate(
+      _id,
+      { isDelete: true },
+      { new: true },
+    );
+
+    if (!deleted) {
+      return res.status(404).json({
+        ok: false,
+        message: "No update",
+        mensaje: "No actualizado",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Deleted",
+      mensaje: "Eliminado",
+      data: deleted,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -122,5 +235,6 @@ export {
   createUser,
   updatePassword,
   updateEmail,
-  deleteUser,
+  disableUser,
+  deletedUser,
 };

@@ -166,9 +166,9 @@ const getQuantityOfClient = async (req: Request, res: Response) => {
 };
 const UpdateQtyInventory = async (req: Request, res: Response) => {
   try {
-    const { _id, newQuantity } = req.body;
+    const { _id, ...data } = req.body;
 
-    if (!_id || !newQuantity) {
+    if (!_id || !data) {
       return res.status(400).json({
         ok: false,
         message: "Error",
@@ -179,7 +179,7 @@ const UpdateQtyInventory = async (req: Request, res: Response) => {
 
     const inventory = await InventoryModel.findByIdAndUpdate(
       _id,
-      { quantity: newQuantity },
+      data,
       { new: true },
     );
 
