@@ -45,6 +45,7 @@ const getPalletsByMotherGuide = async (req: Request, res: Response) => {
           isActive: true,
         },
       },
+      { $unwind: "$pallet" },
       {
         $group: {
           _id: { $trim: { input: "$clientName" } },
@@ -125,6 +126,93 @@ const getPalletsByClient = async (req: Request, res: Response) => {
   }
 };
 
+const getPalletsDataProcess = async (req: Request, res: Response) => {
+  try {
+    const clientName = req.query.client;
+    const motherGuide = req.query.motherGuide;
+
+    if (!clientName || !motherGuide) {
+      return res.status(400).json({
+        ok: false,
+        mensaje: "El nombre del cliente y la guía madre son obligatorios",
+      });
+    }
+
+    const results = await PalletsModel.aggregate([
+      {
+        $match: {
+          clientName: clientName,
+          motherGuide: motherGuide,
+          isDelete: false,
+        },
+      },
+      { $unwind: "$pallet" },
+      {
+        $group: {
+          _id: "$_id",
+          totalPallets: { $sum: 1 },
+          totalTVs: { $sum: { $sum: "$pallet.pallets.quantityUnit" } },
+          totalFreight: { $sum: "$pallet.calcPallet.totalFreight" },
+          totalRate: { $sum: "$pallet.calcPallet.totalRate" },
+          totalADM: { $sum: "$pallet.calcPallet.ADM" },
+          totalService: { $sum: "$pallet.calcPallet.caribeTrans" },
+          totalSale: { $sum: "$pallet.calcPallet.totalPrice" },
+          totalUtility: { $sum: "$pallet.calcPallet.utility" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          totalPallets: 1,
+          totalTVs: 1,
+          totalFreight: { $round: ["$totalFreight", 2] },
+          totalRate: { $round: ["$totalRate", 2] },
+          totalADM: { $round: ["$totalADM", 2] },
+          totalService: { $round: ["$totalService", 2] },
+          totalCosts: {
+            $round: [
+              {
+                $add: [
+                  "$totalFreight",
+                  "$totalRate",
+                  "$totalADM",
+                  "$totalService",
+                ],
+              },
+              2,
+            ],
+          },
+          totalSale: { $round: ["$totalSale", 2] },
+          totalUtility: { $round: ["$totalUtility", 2] },
+        },
+      },
+    ]);
+
+    if (results.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        message: "No found register",
+        mensaje: "No se encontraron registros",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "success",
+      mensaje: "Datos agrupados con éxito",
+      data: results[0],
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "Error internal server",
+      mensaje: "Error interno del servidor",
+      data: null,
+    });
+  }
+};
+
 const createPallets = async (req: Request, res: Response) => {
   try {
     const data: IPalletNew = req.body;
@@ -171,7 +259,7 @@ const createPallets = async (req: Request, res: Response) => {
         const UpdateQtyInventory = await InventoryModel.findByIdAndUpdate(
           inventoryInfo._id,
           { quantity: restInventoryStock },
-          { returnDocument: 'after' }
+          { returnDocument: "after" },
         );
 
         if (!UpdateQtyInventory) {
@@ -303,4 +391,5 @@ export {
   deletePallets,
   getPalletsByMotherGuide,
   getPalletsByClient,
+  getPalletsDataProcess,
 };

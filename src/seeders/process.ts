@@ -28,6 +28,12 @@ const processRouterSeeder = async () => {
         path: "/maintenances",
         description: "",
       },
+      {
+        nameProcess: "Invoices",
+        icon: "scrollText",
+        path: "/invoices",
+        description: "",
+      },
     ];
 
     for (const processData of processRoutesData) {

@@ -16,5 +16,6 @@ router.use("/pallets", palletRouter);
 router.use("/price", priceRouter);
 router.use("/inventory", inventoryRouter);
 router.use("/maintenance", maintenanceRouter);
+router.use("/invoices", inventoryRouter);
 
 export default router;

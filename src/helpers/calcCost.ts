@@ -11,7 +11,9 @@ export const CalcCost = async (weightLB: number, maintenance: IMaintenanceCost, 
     const caribeTrans: number = weightLB * (0.1) * maintenance.rate;
     const totalCost: number = totalRD + maintenance.ADM + caribeTrans;
     const utility: number = totalPrice - totalCost;
-
+    const totalFreight: number = costDollarLB * maintenance.rate;
+    const totalRate: number = customDutyUS * maintenance.rate;
+    
     const palletCalc:IPalletsCalc = {
       weightLB: weightLB,
       weightKG: weightKG,
@@ -23,6 +25,8 @@ export const CalcCost = async (weightLB: number, maintenance: IMaintenanceCost, 
       caribeTrans: caribeTrans,
       totalCost: totalCost,
       totalPrice: totalPrice,
+      totalFreight: totalFreight,
+      totalRate: totalRate,
       utility: utility
     }
 

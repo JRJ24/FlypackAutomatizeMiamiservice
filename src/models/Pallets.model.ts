@@ -78,6 +78,14 @@ const PalletCalcSchema = new Schema<IPalletsCalc>(
       type: Number,
       required: true,
     },
+    totalFreight: {
+      type: Number,
+      required: true,
+    },
+    totalRate: {
+      type: Number,
+      required: true,
+    },
     totalPrice: {
       type: Number,
       required: true,

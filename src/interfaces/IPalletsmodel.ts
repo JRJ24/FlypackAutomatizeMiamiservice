@@ -39,6 +39,8 @@ export interface IPalletsCalc {
   caribeTrans: number;
   totalCost: number;
   totalPrice: number;
+  totalFreight: number;
+  totalRate: number;
   utility: number;
 }
 

@@ -16,6 +16,13 @@ palletRouter.get(
   palletsController.getPallets
 )
 
+
+palletRouter.get(
+  '/getTotal',
+  validatJWT,
+  palletsController.getPalletsDataProcess
+)
+
 palletRouter.get(
   '/motherGuide/:motherGuide',
   validatJWT,
