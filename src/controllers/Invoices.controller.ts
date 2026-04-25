@@ -32,6 +32,7 @@ const createInvoices = async (req: Request, res: Response) => {
       data: invoice,
     });
   } catch (error) {
+    console.log(error);
     return res.status(500).json({
       ok: false,
       message: "ERROR INTERNAL SERVER",

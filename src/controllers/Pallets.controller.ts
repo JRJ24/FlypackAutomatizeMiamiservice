@@ -138,6 +138,8 @@ const getPalletsDataProcess = async (req: Request, res: Response) => {
       });
     }
 
+    const maintenance = await MaintenanceCostModel.findOne();
+    const rate = maintenance?.rate;
     const results = await PalletsModel.aggregate([
       {
         $match: {
@@ -148,11 +150,18 @@ const getPalletsDataProcess = async (req: Request, res: Response) => {
       },
       { $unwind: "$pallet" },
       {
+        $lookup: {
+          from: "maintenances",
+          pipeline: [{ $match: { name: "rate" } }],
+          as: "maintenances",
+        },
+      },
+      {
         $group: {
           _id: "$_id",
           totalPallets: { $sum: 1 },
           totalTVs: { $sum: { $sum: "$pallet.pallets.quantityUnit" } },
-          totalFreight: { $sum: "$pallet.calcPallet.totalFreight" },
+          tempSumFreight: { $sum: "$pallet.calcPallet.costLbUS" }, // <-- Se llama tempSumFreight
           totalRate: { $sum: "$pallet.calcPallet.totalRate" },
           totalADM: { $sum: "$pallet.calcPallet.ADM" },
           totalService: { $sum: "$pallet.calcPallet.caribeTrans" },
@@ -165,10 +174,22 @@ const getPalletsDataProcess = async (req: Request, res: Response) => {
           _id: 0,
           totalPallets: 1,
           totalTVs: 1,
-          totalFreight: { $round: ["$totalFreight", 2] },
+          // Usamos los nombres exactos del $group
+          totalFreight: {
+            $round: [{ $multiply: ["$tempSumFreight", rate] }, 2],
+          },
           totalRate: { $round: ["$totalRate", 2] },
           totalADM: { $round: ["$totalADM", 2] },
           totalService: { $round: ["$totalService", 2] },
+          totalSale: { $round: ["$totalSale", 2] },
+          totalUtility: { $round: ["$totalUtility", 2] },
+          debugTasa: "$rate",
+          debugSuma: "$tempSumFreight",
+        },
+      },
+      {
+        // Agregamos los costos al final para que totalFreight ya exista y no sea null
+        $addFields: {
           totalCosts: {
             $round: [
               {
@@ -182,8 +203,6 @@ const getPalletsDataProcess = async (req: Request, res: Response) => {
               2,
             ],
           },
-          totalSale: { $round: ["$totalSale", 2] },
-          totalUtility: { $round: ["$totalUtility", 2] },
         },
       },
     ]);
@@ -359,9 +378,72 @@ const createPallets = async (req: Request, res: Response) => {
   }
 };
 
-// No modified
-const updatePallets = async (req: Request, res: Response) => {
+const getPalletsBillings = async (req: Request, res: Response) => {
   try {
+    let query = { isDelete: false, status: "Invoiced" };
+
+    const palletsInvoices = await PalletsModel.find(query).lean();
+
+    if (!palletsInvoices || palletsInvoices.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        message: "No found register",
+        mensaje: "No se encontraron registros",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "success",
+      mensaje: "Datos obtenidos con éxito",
+      data: palletsInvoices,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "Error internal server",
+      mensaje: "Error interno del servidor",
+      data: null,
+    });
+  }
+};
+
+// No modified
+const updatePalletsInvoices = async (req: Request, res: Response) => {
+  try {
+    const { status, motherGuide, clientName } = req.body;
+
+    if (!status || !motherGuide || !clientName) {
+      return res.status(400).json({
+        ok: false,
+        message: "Missing data",
+        mensaje: "Faltan datos",
+        data: null,
+      });
+    }
+
+    const updatedPallet = await PalletsModel.findOneAndUpdate(
+      { motherGuide: motherGuide, clientName: clientName },
+      { status: status },
+      { new: true },
+    );
+
+    if (!updatedPallet) {
+      return res.status(404).json({
+        ok: false,
+        message: "No found register",
+        mensaje: "No se encontraron registros",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Updated",
+      mensaje: "Actualizado correctamente",
+      data: updatedPallet,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -374,6 +456,38 @@ const updatePallets = async (req: Request, res: Response) => {
 
 const deletePallets = async (req: Request, res: Response) => {
   try {
+    const { motherGuide, clientName } = req.body;
+
+    if (!motherGuide || !clientName) {
+      return res.status(400).json({
+        ok: false,
+        message: "Missing data",
+        mensaje: "Faltan datos",
+        data: null,
+      });
+    }
+
+    const deletedPallet = await PalletsModel.findOneAndUpdate(
+      { motherGuide: motherGuide, clientName: clientName },
+      { isDelete: true, isActive: false },
+      { new: true },
+    );
+
+    if (!deletedPallet) {
+      return res.status(404).json({
+        ok: false,
+        message: "No found register",
+        mensaje: "No se encontraron registros",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Deleted",
+      mensaje: "Eliminado correctamente",
+      data: deletedPallet,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -387,9 +501,10 @@ const deletePallets = async (req: Request, res: Response) => {
 export {
   getPallets,
   createPallets,
-  updatePallets,
+  updatePalletsInvoices,
   deletePallets,
   getPalletsByMotherGuide,
   getPalletsByClient,
   getPalletsDataProcess,
+  getPalletsBillings,
 };

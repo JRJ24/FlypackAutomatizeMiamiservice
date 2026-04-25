@@ -10,6 +10,10 @@ const InvoicesSchema = new Schema<IInvoices>({
     type: String,
     required: true
   },
+  date: {
+    type: String,
+    required: true
+  },
   totalPallets: {
     type: String,
     required: true
@@ -27,6 +31,10 @@ const InvoicesSchema = new Schema<IInvoices>({
     required: true
   },
   totalADM: {
+    type: Number,
+    required: true
+  },
+  totalService: {
     type: Number,
     required: true
   },

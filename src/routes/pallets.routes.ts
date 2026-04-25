@@ -35,11 +35,17 @@ palletRouter.get(
   palletsController.getPalletsByClient
 )
 
-
-palletRouter.put(
-  '/',
+palletRouter.get(
+  '/invoicesBilling',
   validatJWT,
-  palletsController.updatePallets
+  palletsController.getPalletsBillings
+)
+
+
+palletRouter.patch(
+  '/billing',
+  validatJWT,
+  palletsController.updatePalletsInvoices
 )
 
 palletRouter.delete(

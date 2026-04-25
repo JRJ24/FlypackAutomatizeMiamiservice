@@ -7,6 +7,8 @@ export interface IInvoices {
   totalSale: number;
   totalUtility: number;
   totalCosts: number;
+  totalService: number;
   client: string;
   motherGuide: string;
+  date: string;
 }

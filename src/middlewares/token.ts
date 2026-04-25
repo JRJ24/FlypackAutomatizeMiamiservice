@@ -83,6 +83,7 @@ const generateJWT = (data: any) => {
       },
       (err, token) => {
         if (err) {
+          console.error("Error exacto de JWT:", err);
           reject("Couln't generate token");
         } else {
           resolve(token);

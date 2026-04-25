@@ -27,7 +27,7 @@ userRouter.patch(
 
 userRouter.post(
 	'/',
-	generateJWT,
+	// generateJWT,
 	Users.createUser,
 )
 

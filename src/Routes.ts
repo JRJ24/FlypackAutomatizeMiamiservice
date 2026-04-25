@@ -6,6 +6,7 @@ import palletRouter from "./routes/pallets.routes";
 import priceRouter from "./routes/price.routes";
 import inventoryRouter from "./routes/inventory.routes";
 import maintenanceRouter from "./routes/maintenances.routes";
+import invoicesRoutes from "./routes/invoices.routes";
 
 const router: Router = Router();
 
@@ -16,6 +17,6 @@ router.use("/pallets", palletRouter);
 router.use("/price", priceRouter);
 router.use("/inventory", inventoryRouter);
 router.use("/maintenance", maintenanceRouter);
-router.use("/invoices", inventoryRouter);
+router.use("/invoices", invoicesRoutes);
 
 export default router;
