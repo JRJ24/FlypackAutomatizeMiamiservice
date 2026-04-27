@@ -11,4 +11,6 @@ export interface IInvoices {
   client: string;
   motherGuide: string;
   date: string;
+  status: string;
+  totalPaid: number;
 }

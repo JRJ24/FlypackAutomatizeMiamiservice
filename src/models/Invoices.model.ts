@@ -49,6 +49,17 @@ const InvoicesSchema = new Schema<IInvoices>({
   totalUtility: {
     type: Number, 
     required: true
+  },
+  status: {
+    type: String,
+    required: true,
+    default: "NO PAID",
+    enum: ["NO PAID, PAID, OWES"]
+  },
+  totalPaid: {
+    type: Number,
+    required: true,
+    default: 0,
   }
 })
 

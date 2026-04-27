@@ -23,4 +23,10 @@ invoicesRoutes.get(
   InvoicesController.getInvoicesByMotherGuideAndClient
 )
 
+invoicesRoutes.get(
+  '/get3/:motherGuide/:clientName',
+  validatJWT,
+  InvoicesController.getInvoicesForClient
+)
+
 export default invoicesRoutes;
