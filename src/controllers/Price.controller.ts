@@ -114,6 +114,34 @@ const updatePrice = async (req: Request, res: Response) => {
 
 const deletePrice = async (req: Request, res: Response) => {
   try {
+    const { _id } = req.params;
+
+    if (!_id) {
+      return res.status(400).json({
+        ok: false,
+        message: "No credentials",
+        mensaje: "No credenciales",
+        data: null,
+      });
+    }
+
+    const deleteOne = await PriceModel.deleteOne({ _id: _id }, { new: true });
+
+    if (!deleteOne) {
+      return res.status(404).json({
+        ok: false,
+        message: "No Deleted",
+        mensaje: "No elimanado",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Deleted",
+      mensaje: "Elimanado",
+      data: null,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,

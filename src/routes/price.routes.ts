@@ -30,7 +30,7 @@ priceRouter.put(
 )
 
 priceRouter.delete(
-  '/',
+  '/:_id',
   validatJWT,
   priceController.deletePrice
 )
