@@ -1,7 +1,7 @@
-import * as Users from '@/../../src/controllers/Users.controller'
+import * as Users from './../controllers/Users.controller'
 import multer from 'multer'
 const { check } = require("express-validator");
-import { validatJWT, deleteJWT, generateJWT } from '@/../../src/middlewares/token';
+import { validatJWT, deleteJWT, generateJWT } from './../middlewares/token';
 import express = require('express');
 
 const userRouter: express.Router = express.Router();

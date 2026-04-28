@@ -1,7 +1,7 @@
-import * as Process from '@/../../src/controllers/Process.controller'
+import * as Process from './../controllers/Process.controller'
 import multer from 'multer'
 const { check } = require("express-validator");
-import { validatJWT } from '@/../../src/middlewares/token';
+import { validatJWT } from './../middlewares/token';
 import express = require('express');
 
 const processRouter: express.Router = express.Router();
