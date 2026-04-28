@@ -16,6 +16,7 @@ import { initializeSocket } from "./Socket";
 import processRouterSeeder from "./seeders/process";
 import priceSeeder from "./seeders/prices";
 import { MaintenanceCostSeeders } from "./seeders/maintenanceCost";
+import { authGoogle } from "./middlewares/authGoogle";
 
 const app: express.Application = express();
 const server = http.createServer(app);
@@ -70,7 +71,7 @@ app.use("/api", router);
 
 app.set("trust proxy", 1);
 
-// authGoogle();
+authGoogle();
 app.use(passport.initialize());
 
 const PORT = process.env.PORT || 5000;

@@ -14,16 +14,16 @@ authRouter.post(
     authController.login
 )
 
-// authRouter.get(
-//   "/loginGoogle",
-//   passport.authenticate("google", { scope: ["profile", "email"], session: false })
-// );
+authRouter.get(
+  "/loginGoogle",
+  passport.authenticate("google", { scope: ["profile", "email"], session: false })
+);
 
-// authRouter.get(
-//   "/google/callback",
-//   passport.authenticate("google", { session: false, failureRedirect: "https://reclamaciones.flypack.do/login?error=auth_failed" }),
-//   authController.loginGoogle 
-// );
+authRouter.get(
+  "/google/callback",
+  passport.authenticate("google", { session: false, failureRedirect: "http://localhost:5173/login?error=auth_failed" }),
+  authController.loginGoogle 
+);
 
 // authRouter.get(
 //   "/refresh",

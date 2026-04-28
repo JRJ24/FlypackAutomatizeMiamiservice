@@ -7,43 +7,42 @@ import crypto from "crypto";
 // Generate Token by user credentials
 const login = async (req: Request, res: Response) => {
   try {
+    const { email, password } = req.body;
 
-    const {email, password } = req.body;
-    
     // const allowedDomains = process.env.EMAIL_ENDS.split(',');
-    
+
     // const isValidEmail = allowedDomains.some(domain => email.endsWith(domain));
-    if(!email){
+    if (!email) {
       return res.status(400).json({
         ok: false,
         message: "Invalid Credentials email is required",
-      })
+      });
     }
 
-    const searchHash = crypto.createHash('sha256').update(email).digest('hex');
+    const searchHash = crypto.createHash("sha256").update(email).digest("hex");
 
-    const user = await userModel.findOne({emailIndex: searchHash});
+    const user = await userModel.findOne({ emailIndex: searchHash });
 
     if (!user) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         ok: false,
-        message: "no user found"
+        message: "no user found",
       });
     }
 
     if (user.isDelete) {
       return res.status(404).json({
         ok: false,
-        message: "user is delete"
+        message: "user is delete",
       });
     }
     if (!user.isActive) {
       return res.status(404).json({
         ok: false,
-        message: "user is not active"
+        message: "user is not active",
       });
     }
-  
+
     const isMatch = await bcrypt.compare(password, user.password || "");
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid credentials pas" });
@@ -51,7 +50,7 @@ const login = async (req: Request, res: Response) => {
 
     const userToSend = user.toObject();
     delete userToSend.password;
-    
+
     const token = await generateJWT(userToSend);
 
     res.json({
@@ -61,7 +60,6 @@ const login = async (req: Request, res: Response) => {
       mensaje: "ME AUTO EXITO INICIO DE SESION",
       token,
     });
-    
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }
@@ -81,36 +79,67 @@ const logout = async (req: Request, res: Response) => {
   }
 };
 
-// const loginGoogle = async (req: Request, res: Response) => {
-//   try {
-//     const user = req.user as any;
+const loginGoogle = async (req: Request, res: Response) => {
+  try {
+    const user = req.user as any;
+    if (process.env.NODE_ENV === "PROD") {
+      if (!user) {
+        return res.redirect("https://operaciones.flypack.do/login?error=auth_failed");
+      }
 
-//     if (!user) {
-//       return res.redirect('https://reclamaciones.flypack.do/login?error=auth_failed');
-//     }
+      if (user.isDelete) {
+        return res.redirect(
+          "https://operaciones.flypack.do/login?error=account_deleted",
+        );
+      }
 
-//     if (user.isDelete) {
-//       return res.redirect('https://reclamaciones.flypack.do/login?error=account_deleted');
-//     }
+      if (!user.isActive) {
+        return res.redirect(
+          "https://operaciones.flypack.do/login?error=account_inactive",
+        );
+      }
 
-//     if (!user.isActive) {
-//       return res.redirect('https://reclamaciones.flypack.do/login?error=account_inactive');
-//     }
+      const userToSend = user.toObject ? user.toObject() : user;
+      delete userToSend.password;
 
-//     const userToSend = user.toObject ? user.toObject() : user;
-//     delete userToSend.password;
-    
-//     const token = await generateJWT(userToSend);
+      const token = await generateJWT(userToSend);
 
-//     // IMPORTANTE: Redirige al frontend con el token
-//     res.redirect(`https://reclamaciones.flypack.do/login/callback?token=${token}&user=${encodeURIComponent(JSON.stringify(userToSend))}`);
-    
-//   } catch (error) {
-//     console.error(error);
-//     res.redirect('https://reclamaciones.flypack.do/login?error=server_error');
-//   }
-// };
+      // IMPORTANTE: Redirige al frontend con el token
+      res.redirect(
+        `https://operaciones.flypack.do/login/callback?token=${token}&user=${encodeURIComponent(JSON.stringify(userToSend))}`,
+      );
+    } else {
+      if (!user) {
+        return res.redirect("https://operaciones.flypack.do/login?error=auth_failed");
+      }
 
+      if (user.isDelete) {
+        return res.redirect(
+          "https://operaciones.flypack.do/login?error=account_deleted",
+        );
+      }
+
+      if (!user.isActive) {
+        return res.redirect(
+          "https://operaciones.flypack.do/login?error=account_inactive",
+        );
+      }
+
+      const userToSend = user.toObject ? user.toObject() : user;
+      delete userToSend.password;
+
+      const token = await generateJWT(userToSend);
+
+      // IMPORTANTE: Redirige al frontend con el token
+      res.redirect(
+        `http://localhost:5173/login/callback?token=${token}&user=${encodeURIComponent(JSON.stringify(userToSend))}`,
+      );
+    }
+  } catch (error) {
+    console.error(error);
+    res.redirect("http://localhost:5173/login?error=server_error");
+  }
+};
 
 // const refresh = async (req: Request, res: Response) => {
 //   try{
@@ -124,7 +153,7 @@ const logout = async (req: Request, res: Response) => {
 //     }
 
 //     const freshUser = await userModel.findOne({ email: user.email });
-    
+
 //     if(!freshUser){
 //       return res.status(404).json({
 //         ok: false,
@@ -154,4 +183,4 @@ const logout = async (req: Request, res: Response) => {
 //   }
 // }
 
-export { login, logout };
+export { login, logout, loginGoogle };
