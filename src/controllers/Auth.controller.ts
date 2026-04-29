@@ -3,6 +3,9 @@ import { generateJWT, deleteJWT } from "../middlewares/token";
 import bcrypt from "bcryptjs";
 import userModel from "../models/Users.model";
 import crypto from "crypto";
+import UsersModel from "../models/Users.model";
+import { emailForgotPassword } from "./../helpers/emailManaged";
+import { hashPassword } from "./../helpers/hashpassword";
 
 // Generate Token by user credentials
 const login = async (req: Request, res: Response) => {
@@ -84,7 +87,9 @@ const loginGoogle = async (req: Request, res: Response) => {
     const user = req.user as any;
     if (process.env.NODE_ENV === "PROD") {
       if (!user) {
-        return res.redirect("https://operaciones.flypack.do/login?error=auth_failed");
+        return res.redirect(
+          "https://operaciones.flypack.do/login?error=auth_failed",
+        );
       }
 
       if (user.isDelete) {
@@ -110,7 +115,9 @@ const loginGoogle = async (req: Request, res: Response) => {
       );
     } else {
       if (!user) {
-        return res.redirect("https://operaciones.flypack.do/login?error=auth_failed");
+        return res.redirect(
+          "https://operaciones.flypack.do/login?error=auth_failed",
+        );
       }
 
       if (user.isDelete) {
@@ -183,4 +190,151 @@ const loginGoogle = async (req: Request, res: Response) => {
 //   }
 // }
 
-export { login, logout, loginGoogle };
+const FORGOTPASSWORD = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    let resetLink: string;
+    if (!email) {
+      return res.status(400).json({
+        ok: false,
+        message: "No email",
+        mensaje: "No email",
+        data: null,
+      });
+    }
+
+    const verifyEmail = await UsersModel.findOne({ email: email });
+
+    if (verifyEmail) {
+      const resetToken = crypto.randomBytes(20).toString("hex");
+
+      const passwordResetToken = crypto
+        .createHash("sha256")
+        .update(resetToken)
+        .digest("hex");
+
+      const passwordResetExpires = Date.now() + 10 * 60 * 1000;
+
+      verifyEmail.resetPasswordToken = passwordResetToken;
+      verifyEmail.resetPasswordExpires = passwordResetExpires;
+
+      await verifyEmail.save();
+
+      if (process.env.NODE_ENV === "PROD") {
+        resetLink = `https://operaciones.flypack.do/RESETPASSWORD?token=${resetToken}`;
+      } else {
+        resetLink = `http://localhost:5173/RESETPASSWORD?token=${resetToken}`;
+      }
+
+      await emailForgotPassword(email, resetLink);
+
+      return res.status(200).json({
+        ok: true,
+        message: "In process",
+        mensaje: "En proceso",
+        data: null,
+      });
+    }
+
+    return res.status(404).json({
+      ok: false,
+      message: "User not found",
+      mensaje: "Usuario no encontrado",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL",
+      mensaje: "ERROR INTERNO",
+      data: null,
+    });
+  }
+};
+
+const RESETPASSWORD = async (req: Request, res: Response) => {
+  try {
+    const { newPassword, reNewPassword, recoveryToken } = req.body;
+
+    // More explicit validation
+    if (
+      !newPassword ||
+      typeof newPassword !== "string" ||
+      newPassword.trim() === ""
+    ) {
+      return res.status(400).json({
+        ok: false,
+        message: "No data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    if (!reNewPassword || typeof reNewPassword !== "string") {
+      return res.status(400).json({
+        ok: false,
+        message: "No data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    if (!recoveryToken || typeof recoveryToken !== "string") {
+      return res.status(400).json({
+        ok: false,
+        message: "Token de recuperación faltante",
+        mensaje: "No se proporcionó un token válido",
+      });
+    }
+
+    const passwordResetToken = crypto
+      .createHash("sha256")
+      .update(recoveryToken)
+      .digest("hex");
+
+    const user = await UsersModel.findOne({
+      resetPasswordToken: passwordResetToken,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user || !user.password) {
+      return res.status(400).json({
+        ok: false,
+        message: "No User o no user with password",
+        mensaje: "No User",
+        data: null,
+      });
+    }
+
+    const isMatch = await bcrypt.compare(newPassword, user.password);
+    if (isMatch) {
+      return res.status(400).json({
+        ok: false,
+        message: "This password is the same",
+      });
+    }
+
+    const hashPass = await hashPassword(newPassword);
+
+    user.password = hashPass;
+    user.resetPasswordToken = "";
+    user.resetPasswordExpires = 0;
+
+    await user.save();
+
+    return res.status(200).json({
+      ok: true,
+      message: "The password update sucessfully",
+      mensaje: "La contraseña fue actualzada con exito",
+      data: "Sucess",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      ok: false,
+      message: "Server error",
+      mensaje: "Error en el servidor",
+    });
+  }
+};
+
+export { login, logout, loginGoogle, FORGOTPASSWORD, RESETPASSWORD };

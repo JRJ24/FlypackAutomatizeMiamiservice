@@ -12,7 +12,7 @@ const UsersSchema = new Schema<IUserModel>(
     email: {
       type: String,
       required: true,
-      unique: true
+      unique: true,
     },
     emailIndex: {
       type: String,
@@ -37,6 +37,14 @@ const UsersSchema = new Schema<IUserModel>(
       type: Boolean,
       isRequired: true,
       default: true,
+    },
+    resetPasswordToken: {
+      type: String,
+      isRequired: false,
+    },
+    resetPasswordExpires: {
+      type: Number,
+      isRequired: false,
     },
     isActive: {
       type: Boolean,

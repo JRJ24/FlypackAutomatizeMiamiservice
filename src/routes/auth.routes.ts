@@ -33,4 +33,8 @@ authRouter.get(
 
 authRouter.get("/logout", validatJWT, authController.logout);
 
+authRouter.post("/request-password-reset", authController.FORGOTPASSWORD);
+
+authRouter.post("/change-the-password", authController.RESETPASSWORD);
+
 export default authRouter;
