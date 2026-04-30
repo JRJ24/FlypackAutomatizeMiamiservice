@@ -79,6 +79,27 @@ UsersSchema.pre("save", function () {
   }
 });
 
+UsersSchema.pre("findOneAndUpdate", function () {
+  const update = this.getUpdate() as any;
+
+  if (update.name) {
+    update.name = encrypt(update.name);
+  }
+
+  if (update.email) {
+    const plainEmail = update.email;
+    update.emailIndex = crypto
+      .createHash("sha256")
+      .update(plainEmail)
+      .digest("hex");
+
+    update.email = encrypt(plainEmail);
+  }
+
+  this.setUpdate(update);
+});
+
+
 UsersSchema.post("init", function (doc) {
   try {
     if (doc.name) doc.name = decrypt(doc.name);

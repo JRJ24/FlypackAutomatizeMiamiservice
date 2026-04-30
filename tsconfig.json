@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "types": ["express", "node", "jest"],
+    "typeRoots": ["./node_modules/@types"],
     "module": "node16",
     "esModuleInterop": true,
     "target": "es6",
