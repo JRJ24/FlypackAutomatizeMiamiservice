@@ -293,6 +293,12 @@ const priceSeeder = async () => {
         isSpecial: false,
       },
       {
+        model: "RCA",
+        inches: "32",
+        unitPrice: 1900.0,
+        isSpecial: false,
+      },
+      {
         model: "Onn",
         inches: "24",
         unitPrice: 1750.0,
