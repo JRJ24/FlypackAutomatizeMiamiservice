@@ -35,7 +35,6 @@ const GetUsers = async (req: Request, res: Response) => {
 const createUser = async (req: Request, res: Response) => {
   try {
     const { ...data } = req.body;
-    console.log(data, "hola");
     if (data.password) {
       data.password = await hashPassword(data.password);
       data.mustchangePassword = false;
