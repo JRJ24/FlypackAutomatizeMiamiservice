@@ -145,7 +145,7 @@ const getQuantityOfClient = async (req: Request, res: Response) => {
         ok: false,
         message: "NO have stock",
         mensaje: "No tiene stock",
-        data: null,
+        data: 0,
       });
     }
 

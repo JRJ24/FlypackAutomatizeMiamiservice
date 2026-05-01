@@ -315,32 +315,35 @@ const createPallets = async (req: Request, res: Response) => {
       });
     }
 
-    // 3. Pasar los datos a la función CalcCost
     const palletCalc = await CalcCost(weightLB, maintenance, globalTotalPrice);
 
-    // 4. Calcular el número del pallet actual para la guía madre
-    const existingGuide = await PalletsModel.findOne({
+    // const existingGuide = await PalletsModel.findOne({
+    //   motherGuide: data.motherGuide,
+    //   clientName: data.clientName,
+    // });
+
+    const allGuidesSameMother = await PalletsModel.find({
       motherGuide: data.motherGuide,
     });
 
-    // Si la guía ya existe, contamos cuántos pallets tiene, si no, empezamos en 0
-    const currentPalletCount =
-      existingGuide && existingGuide.pallet ? existingGuide.pallet.length : 0;
+    const currentPalletCount = allGuidesSameMother.reduce((total, guide) => {
+      const guidePalletsCount =
+        guide.pallet && Array.isArray(guide.pallet) ? guide.pallet.length : 0;
+      return total + guidePalletsCount;
+    }, 0);
+
     const palletDescription = `PACKING LIST PLT#${currentPalletCount + 1} (${weightLB} LBS)`;
 
-    // 5. Armar el objeto del nuevo pallet individual
     const newPalletSingle = {
       palletDescription: palletDescription,
       pallets: enrichedPallets,
       calcPallet: palletCalc,
     };
 
-    // 6. Guardar en la base de datos (Agrupar o Crear nuevo documento)
     const saved = await PalletsModel.findOneAndUpdate(
-      { motherGuide: data.motherGuide },
+      { motherGuide: data.motherGuide, clientName: data.clientName },
       {
         $setOnInsert: {
-          clientName: data.clientName,
           date: data.date,
           status: "Not invoiced",
           isActive: true,

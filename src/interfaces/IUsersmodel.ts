@@ -16,3 +16,4 @@ export interface IUserModel extends mongoose.Document {
   createAt: Date;
   updateAt: Date;
 }
+

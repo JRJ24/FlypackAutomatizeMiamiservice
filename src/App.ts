@@ -17,6 +17,7 @@ import processRouterSeeder from "./seeders/process";
 import priceSeeder from "./seeders/prices";
 import { MaintenanceCostSeeders } from "./seeders/maintenanceCost";
 import { authGoogle } from "./middlewares/authGoogle";
+import seedUsers from "./seeders/userClients";
 
 const app: express.Application = express();
 const server = http.createServer(app);
@@ -38,7 +39,6 @@ const origin =
   process.env.NODE_ENV === "PROD"
     ? process.env.URL_FRONTEND_PROD
     : process.env.URL_FRONTEND_DEV;
-
 
 app.use(
   cors({
@@ -81,10 +81,11 @@ dbConnection()
     await processRouterSeeder();
     await priceSeeder();
     await MaintenanceCostSeeders();
+    await seedUsers();
     server.listen(PORT, async () => {
       const io = initializeSocket(server);
       app.set("socketio", io);
-      console.log(`http://localhost:${PORT}`)
+      console.log(`http://localhost:${PORT}`);
     });
 
     process.on("SIGTERM", async () => {

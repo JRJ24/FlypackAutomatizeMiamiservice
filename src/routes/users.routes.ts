@@ -13,6 +13,12 @@ userRouter.get(
 	Users.GetUsers,
 )
 
+userRouter.get(
+	'/get2',
+	validatJWT,
+	Users.getUserClient,
+)
+
 userRouter.delete(
 	'/delete',
 	validatJWT,

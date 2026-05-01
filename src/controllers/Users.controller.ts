@@ -32,6 +32,38 @@ const GetUsers = async (req: Request, res: Response) => {
   }
 };
 
+const getUserClient = async (req: Request, res: Response) => {
+  try {
+    const clients = await UsersModel.find({
+      role: "CLIENTFLYPACK",
+      isActive: true,
+    }).select("name");
+
+    if (!clients || clients.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        message: "No haven't clients",
+        mensaje: "No hay clientes",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Clients",
+      mensaje: "Clientes",
+      data: clients,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL SERVER",
+      mensaje: "ERROR INTERNO DEL SERVIDOR",
+      data: null,
+    });
+  }
+};
+
 const createUser = async (req: Request, res: Response) => {
   try {
     const { ...data } = req.body;
@@ -236,4 +268,5 @@ export {
   updateEmail,
   disableUser,
   deletedUser,
+  getUserClient,
 };

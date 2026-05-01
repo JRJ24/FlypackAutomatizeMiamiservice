@@ -54,7 +54,7 @@ const InvoicesSchema = new Schema<IInvoices>({
     type: String,
     required: true,
     default: "NO PAID",
-    enum: ["NO PAID, PAID, OWES"]
+    enum: ["NO PAID", "PAID", "OWES"]
   },
   totalPaid: {
     type: Number,

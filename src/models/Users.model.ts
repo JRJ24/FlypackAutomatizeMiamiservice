@@ -29,7 +29,7 @@ const UsersSchema = new Schema<IUserModel>(
     },
     role: {
       type: String,
-      enum: ["FLYPACKADMIN", "FLYPACKMIAMI", "FLYPACKJDG", "USER"],
+      enum: ["FLYPACKADMIN", "FLYPACKMIAMI", "FLYPACKJDG", "CLIENTFLYPACK", "USER"],
       default: "USER",
       required: true,
     },
