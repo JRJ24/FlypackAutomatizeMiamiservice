@@ -1,99 +1,62 @@
-import {
-  ISuitCases,
-  ISuitCasesMain,
-  ISuitCasesTotals,
-} from "@/interfaces/ISuitcasesmodel";
+import type { ISuitCases, ISuitCasesData } from "@/interfaces/ISuitcasesmodel";
 import { model, Schema } from "mongoose";
 
-const totalSuitCases = new Schema<ISuitCasesTotals>(
-  {
-    totalFreight: {
-      type: Number,
-      required: true,
-    },
-    totalRate: {
-      type: Number,
-      required: true,
-    },
-    totalCosts: {
-      type: Number,
-      required: true,
-    },
-    totalSale: {
-      type: Number,
-      required: true,
-    },
-    totalUtility: {
-      type: Number,
-      required: true,
-    },
+const DataSuitCasesSchema = new Schema<ISuitCasesData>({
+  brandModel: {
+    type: String,
+    required: true,
   },
-  {
-    _id: false,
-    versionKey: false,
+  inches: {
+    type: String,
+    required: true,
   },
-);
+  weightLB: {
+    type: Number,
+    required: true,
+  },
+  quantity: {
+    type: Number,
+    required: true,
+  },
+  totalFreight: {
+    type: Number,
+    required: true,
+  },
+  totalRate: {
+    type: Number,
+    required: true,
+  },
+  totalCostVersat: {
+    type: Number,
+    required: true,
+  },
+  totalUnitPrice: {
+    type: Number,
+    required: true,
+  },
+  totalUtility: {
+    type: Number,
+    required: true,
+  },
+});
 
-const suitCases = new Schema<ISuitCases>(
-  {
-    modelBrand: {
-      type: String,
-      required: true,
-    },
-    weightLb: {
-      type: Number,
-      required: true,
-    },
-    quantity: {
-      type: Number,
-      required: true,
-    },
-    freight: {
-      type: Number,
-      required: true,
-    },
-    rate: {
-      type: Number,
-      required: true,
-    },
-    costVersat: {
-      type: Number,
-      required: true,
-    },
-    unitPriceSale: {
-      type: Number,
-      required: true,
-    },
-    utility: {
-      type: Number,
-      required: true,
-    },
-  },
-  {
-    _id: false,
-    versionKey: false,
-  },
-);
-
-const SuitCasesSchema = new Schema<ISuitCasesMain>({
+const SuitCasesSchema = new Schema<ISuitCases>({
   clientName: {
     type: String,
     required: true,
   },
-  suitCases: {
-    type: [suitCases],
-    required: true,
-  },
-  totalSuitCases: {
-    type: totalSuitCases,
-    required: true,
-  },
-  status: {
+  motherGuide: {
     type: String,
     required: true,
   },
-}, {
-  timestamps: true,
+  dateArrive: {
+    type: String,
+    required: true,
+  },
+  suitCases: {
+    type: [DataSuitCasesSchema],
+    required: true,
+  },
 });
 
-export default model<ISuitCasesMain>("SuitCases", SuitCasesSchema);
+export default model<ISuitCases>("SuitCases", SuitCasesSchema);

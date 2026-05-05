@@ -1,40 +1,42 @@
-export interface ISuitCasesMain {
-  clientName: string;
-  suitCases: ISuitCases[];
-  totalSuitCases: ISuitCasesTotals;
-  status: string;
-  createAt: Date;
-  updateAt: Date;
-}
-
 export interface ISuitCases {
-  modelBrand: string;
-  weightLb: number;
-  inches: number;
-  quantity: number;
-  freight: number;
-  rate: number;
-  costVersat: number;
-  unitPriceSale: number;
-  utility: number;
-}
-
-export interface ISuitCasesClient {
-  modelBrand: string;
-  weightLb: number;
-  inches: string;
-  quantity: number;
-}
-
-export interface ISuitCasesTotals {
-  totalFreight: number; // Suma de los fletes
-  totalRate: number; // Suma de la tasa
-  totalCosts: number; // Suma de los costos
-  totalSale: number; // Suma de las ventas
-  totalUtility: number; // Suma de la utilidades
-}
-
-export interface ISuitClientSend {
   clientName: string;
-  suitCases: ISuitCasesClient[];
+  motherGuide: string;
+  dateArrive: string;
+  suitCases: ISuitCasesData[];
+}
+
+export interface ISuitCasesData {
+  brandModel: string;
+  inches: string;
+  weightLB: number;
+  quantity: number;
+  totalFreight: number;
+  totalRate: number;
+  totalCostVersat: number;
+  totalUnitPrice: number;
+  totalUtility: number;
+}
+
+export interface ISuitCasesClientSend {
+  clientName: string;
+  motherGuide: string;
+  dateArrive: string;
+  items: ISuitCaseItem[];
+}
+
+export interface ISuitCaseItem {
+  brandModel: string;
+  inches: string;
+  weightLB: number;
+  quantity: number;
+}
+
+export interface ISuitCasesData2 {
+  weightLB: number;
+  quantity: number;
+  totalFreight: number;
+  totalRate: number;
+  totalCostVersat: number;
+  totalUnitPrice: number;
+  totalUtility: number;
 }
