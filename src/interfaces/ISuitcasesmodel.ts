@@ -3,6 +3,7 @@ export interface ISuitCases {
   motherGuide: string;
   dateArrive: string;
   suitCases: ISuitCasesData[];
+  status: string;
 }
 
 export interface ISuitCasesData {

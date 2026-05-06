@@ -57,6 +57,12 @@ const SuitCasesSchema = new Schema<ISuitCases>({
     type: [DataSuitCasesSchema],
     required: true,
   },
+  status: {
+    type: String,
+    required: true,
+    enum: ["Invoiced", "Not invoiced"],
+    default: "Not invoiced",
+  },
 });
 
 export default model<ISuitCases>("SuitCases", SuitCasesSchema);

@@ -13,4 +13,5 @@ export interface IInvoices {
   date: string;
   status: string;
   totalPaid: number;
+  type: string;
 }

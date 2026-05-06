@@ -69,7 +69,7 @@ const getInvoicesByMotherGuide = async (req: Request, res: Response) => {
     return res.status(200).json({
       ok: true,
       message: "Invoices",
-      mensaje: "Invoices",
+      mensaje: "Invoicess",
       data: invoicesMG,
     });
   } catch (error) {
