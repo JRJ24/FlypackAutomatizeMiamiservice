@@ -45,6 +45,11 @@ const getPalletsByMotherGuide = async (req: Request, res: Response) => {
           isActive: true,
         },
       },
+      {
+        $addFields: {
+          tempCount: { $size: { $ifNull: ["$pallet.pallets", []] } },
+        },
+      },
       { $unwind: "$pallet" },
       {
         $group: {
@@ -53,7 +58,7 @@ const getPalletsByMotherGuide = async (req: Request, res: Response) => {
           date: { $first: "$date" },
           motherGuide: { $first: "$motherGuide" },
           status: { $first: "$status" },
-          totalPalletsCount: { $sum: { $size: "$pallet.pallets" } },
+          totalPalletsCount: { $sum: "$tempCount" },
           totalWeightLB: { $sum: "$pallet.calcPallet.weightLB" },
         },
       },
