@@ -31,10 +31,11 @@ const createSuitCases = async (req: Request, res: Response) => {
     const processedSuitCases: ISuitCasesData[] = [];
 
     for (const item of data.items) {
+      const isSpecial = data.clientName === "Daniel" ? true : false;
       const priceBrand = await PriceModel.findOne({
         model: item.brandModel,
         inches: item.inches,
-        isSpecial: false,
+        isSpecial: isSpecial,
       });
 
       if (!priceBrand) {
