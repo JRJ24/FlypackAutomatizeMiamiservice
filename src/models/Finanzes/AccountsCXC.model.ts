@@ -10,6 +10,11 @@ const AccountsCXCSchema = new Schema<IAccountsCXC>({
     type: Number,
     required: false,
   },
+  isActive: {
+    type: Boolean,
+    required: true,
+    default: true
+  }
 });
 
 export default model<IAccountsCXC>("AccountsCXC", AccountsCXCSchema);

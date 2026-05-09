@@ -18,6 +18,8 @@ import priceSeeder from "./seeders/prices";
 import { MaintenanceCostSeeders } from "./seeders/maintenanceCost";
 import { authGoogle } from "./middlewares/authGoogle";
 import seedUsers from "./seeders/userClients";
+import MaintenanceBanks from "./seeders/banksAccounts";
+import seedFutureCounters from "./seeders/counterYear";
 
 const app: express.Application = express();
 const server = http.createServer(app);
@@ -82,6 +84,8 @@ dbConnection()
     await priceSeeder();
     await MaintenanceCostSeeders();
     await seedUsers();
+    await MaintenanceBanks();
+    await seedFutureCounters();
     server.listen(PORT, async () => {
       const io = initializeSocket(server);
       app.set("socketio", io);

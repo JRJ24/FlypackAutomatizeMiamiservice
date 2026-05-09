@@ -5,8 +5,8 @@ import { Request, Response } from "express";
 import mongoose from "mongoose";
 
 const managementAccounts = async (req: Request, res: Response) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  // const session = await mongoose.startSession();
+  // session.startTransaction();
   try {
     const { ...data } = req.body;
 
@@ -22,7 +22,7 @@ const managementAccounts = async (req: Request, res: Response) => {
     const updateCXC = await AccountsReceivableModel.findOneAndUpdate(
       { invoiceNumber: data.invoiceNumber, amount: { $gte: data.amount } },
       { $inc: { amount: -data.amount } },
-      { new: true, session },
+      { returnDocument: "after" /* session */ },
     );
 
     if (!updateCXC) {
@@ -32,16 +32,16 @@ const managementAccounts = async (req: Request, res: Response) => {
     await AccountsAvailableModel.findOneAndUpdate(
       { bankAccountName: data.bankAccountName },
       { $inc: { amount: data.amount } },
-      { session },
+      // { session },
     );
 
     await AccountsCXCModel.findOneAndUpdate(
       { clientName: data.clientName },
       { $inc: { totalAmount: -data.amount } },
-      { upsert: true, session },
+      { upsert: true /* session */ },
     );
 
-    await session.commitTransaction();
+    // await session.commitTransaction();
 
     return res.status(200).json({
       ok: true,
@@ -49,7 +49,8 @@ const managementAccounts = async (req: Request, res: Response) => {
       mensaje: "Finanzas actualizadas",
     });
   } catch (error) {
-    await session.abortTransaction();
+    console.error(error);
+    // await session.abortTransaction();
     return res.status(500).json({
       ok: false,
       message: "ERROR INTERNAL SERVER",
@@ -57,7 +58,7 @@ const managementAccounts = async (req: Request, res: Response) => {
       data: null,
     });
   } finally {
-    session.endSession();
+    // session.endSession();
   }
 };
 const createAccounts = async (req: Request, res: Response) => {
@@ -119,4 +120,106 @@ const deleteAccounts = async (req: Request, res: Response) => {
   }
 };
 
-export { managementAccounts, createAccounts, deleteAccounts };
+const getBanksAvailable = async (req: Request, res: Response) => {
+  try {
+    const getBanks = await AccountsAvailableModel.find({ isActive: true });
+
+    if (!getBanks) {
+      return res.status(404).json({
+        ok: false,
+        message: "No available banks accounts",
+        mensaje: "No cuentas de bancos disponibles",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Accounts Banks available",
+      mensaje: "Cuentas de bancos disponibles",
+      data: getBanks,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL SERVER",
+      mensaje: "ERROR INTERNO DEL SERVIDOR",
+      data: null,
+    });
+  }
+};
+
+const getAccountsCXC = async (req: Request, res: Response) => {
+  try {
+    const getCXC = await AccountsCXCModel.find({ isActive: true });
+
+    if (!getCXC) {
+      return res.status(404).json({
+        ok: false,
+        message: "No data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "data",
+      mensaje: "data",
+      data: getCXC,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL SERVER",
+      mensaje: "ERROR INTERNO DEL SERVIDOR",
+      data: null,
+    });
+  }
+};
+
+const updateAmountBank = async (req: Request, res: Response) => {
+  try {
+    const { bankAccountName, amount } = req.body;
+
+    if (!bankAccountName || !amount) {
+      return res.status(400).json({
+        ok: false,
+        message: "No data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    const update = await AccountsAvailableModel.findOneAndUpdate(
+      { bankAccountName: bankAccountName },
+      { $inc: { amount: amount } },
+      { new: true },
+    );
+
+    if (!update) {
+      return res.status(404).json({
+        ok: false,
+        message: "No update",
+        mensaje: "No update",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Sucess",
+      mensaje: "Exito",
+      data: update,
+    });
+  } catch (error) {}
+};
+
+export {
+  managementAccounts,
+  createAccounts,
+  deleteAccounts,
+  getBanksAvailable,
+  updateAmountBank,
+  getAccountsCXC
+};

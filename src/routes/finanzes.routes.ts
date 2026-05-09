@@ -9,4 +9,22 @@ financesRouter.post("/", validatJWT, FinancesController.createAccounts);
 
 financesRouter.delete("/:_id", validatJWT, FinancesController.deleteAccounts);
 
+financesRouter.get(
+  "/getBanks1",
+  validatJWT,
+  FinancesController.getBanksAvailable,
+);
+
+financesRouter.get(
+  "/getAccountsCXC1",
+  validatJWT,
+  FinancesController.getAccountsCXC,
+);
+
+financesRouter.patch(
+  "/amountBanks",
+  validatJWT,
+  FinancesController.updateAmountBank
+)
+
 export default financesRouter;

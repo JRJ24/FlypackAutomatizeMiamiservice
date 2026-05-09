@@ -5,6 +5,7 @@ const AccountsAvailableSchema = new Schema<IAccountsAvailable>({
   bankAccountName: {
     type: String,
     required: true,
+    unique: true
   },
   amount: {
     type: Number,
@@ -13,6 +14,11 @@ const AccountsAvailableSchema = new Schema<IAccountsAvailable>({
   lastUpdated: {
     type: Date,
   },
+  isActive: {
+    type: Boolean,
+    required: true,
+    default: true
+  }
 });
 
 export default model<IAccountsAvailable>('AccountsAvailable', AccountsAvailableSchema)

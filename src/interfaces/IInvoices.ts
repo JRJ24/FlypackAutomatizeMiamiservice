@@ -1,4 +1,5 @@
 export interface IInvoices {
+  invoiceNumber: string;
   totalPallets: string;
   totalTVs: string;
   totalFreight: number;

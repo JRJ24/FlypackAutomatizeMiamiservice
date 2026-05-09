@@ -16,13 +16,15 @@ export interface IAccountsAvailable {
   amount: number;
   // type: string;
   // currency: string;
-  lastUpdated: Date;
+  lastUpdated?: Date;
+  isActive?: boolean;
 }
 
 export interface IAccountsCXC {
   clientName: string;
   totalAmount: number;
   lastUpdate: Date;
+  isActive: boolean;
   // currency: string;
 }
 
