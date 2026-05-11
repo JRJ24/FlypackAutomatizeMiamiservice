@@ -138,7 +138,7 @@ const getQuantityOfClient = async (req: Request, res: Response) => {
       client: clientName,
       brandTV: brandTV,
       inchs: inches
-    }).select("quantity");
+    }).select({ quantity: 1, model: 1 });
 
     if (!quantityAvailable) {
       return res.status(400).json({

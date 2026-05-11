@@ -18,7 +18,7 @@ const PalletsDetailsSchema = new Schema<IPalletsDetails>(
     },
     descriptionModel: {
       type: String,
-      required: true,
+      required: false,
     },
     unitPrice: {
       type: Number,
