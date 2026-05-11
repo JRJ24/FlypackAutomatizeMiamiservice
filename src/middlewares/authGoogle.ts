@@ -1,6 +1,7 @@
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import userModel from "../models/Users.model";
+import crypto from "crypto";
 // import { sendAdminNewUserNotification, sendWelcomeEmail } from "../helpers/";
 
 const authGoogle = () => {
@@ -15,38 +16,39 @@ const authGoogle = () => {
       {
         clientID: GOOGLE_CLIENT_ID,
         clientSecret: GOOGLE_CLIENT_SECRET,
-        callbackURL: CALLBACK_URL, // ← IMPORTANTE: Debe coincidir con Google Console
+        callbackURL: CALLBACK_URL,
         scope: ["profile", "email"],
         passReqToCallback: false,
       },
       async (accessToken, refreshToken, profile, cb) => {
         try {
-          const email = profile.emails?.[0]?.value;
+          const rawEmail = profile.emails?.[0]?.value;
 
-          if (!email) {
+          if (!rawEmail) {
             return cb(new Error("No email found in Google profile"));
           }
 
-          let user = await userModel.findOne({ email }).exec();
+          const plainEmail = rawEmail.toLowerCase();
+
+          const emailIndexCalculated = crypto
+            .createHash("sha256")
+            .update(plainEmail)
+            .digest("hex");
+
+          let user = await userModel
+            .findOne({ emailIndex: emailIndexCalculated })
+            .exec();
 
           if (!user) {
             user = await userModel.create({
               name: profile.displayName,
-              email: email,
+              email: plainEmail,
               googleId: profile.id,
+              role: "USER", 
               mustchangePassword: false,
               isActive: true,
               isDelete: false,
             });
-
-            // sendWelcomeEmail(user);
-
-            const params = {
-              newUserName: user.name,
-              newUserEmail: user.email,
-            }
-
-            // sendAdminNewUserNotification(params);
           }
 
           return cb(null, user);
@@ -57,7 +59,6 @@ const authGoogle = () => {
     ),
   );
 
-  // Serialización necesaria (aunque uses session: false)
   passport.serializeUser((user: any, done) => {
     done(null, user.id);
   });
