@@ -137,8 +137,8 @@ const getQuantityOfClient = async (req: Request, res: Response) => {
     const quantityAvailable = await InventoryModel.findOne({
       client: clientName,
       brandTV: brandTV,
-      inchs: inches
-    }).select({ quantity: 1, model: 1 });
+      inchs: inches,
+    }).select({ brandTV: 1, quantity: 1, model: 1 });
 
     if (!quantityAvailable) {
       return res.status(400).json({
@@ -177,11 +177,9 @@ const UpdateQtyInventory = async (req: Request, res: Response) => {
       });
     }
 
-    const inventory = await InventoryModel.findByIdAndUpdate(
-      _id,
-      data,
-      { new: true },
-    );
+    const inventory = await InventoryModel.findByIdAndUpdate(_id, data, {
+      new: true,
+    });
 
     if (!inventory) {
       return res.status(400).json({
@@ -247,5 +245,5 @@ export {
   UpdateQtyInventory,
   deleteInventory,
   getInventoryClient,
-  getQuantityOfClient
+  getQuantityOfClient,
 };
