@@ -3,44 +3,44 @@ import InventoryModel from "../models/Inventory.model";
 
 const createInventory = async (req: Request, res: Response) => {
   try {
-    const { ...data } = req.body;
+    // 1. Extraemos quantity del resto de los datos
+    const { quantity, ...otherData } = req.body; 
 
-    if (!data) {
-      return res.status(400).json({
-        ok: false,
-        message: "No data",
-        mensaje: "No data",
-        data: null,
-      });
-    }
+    const modelUpper = otherData.model.toUpperCase();
 
-    const inventory = await InventoryModel.create(data);
-
-    if (!inventory) {
-      return res.status(400).json({
-        ok: false,
-        message: "NO CREATED",
-        mensaje: "No CREADO",
-        data: null,
-      });
-    }
+    const inventory = await InventoryModel.findOneAndUpdate(
+      {
+        brandTV: otherData.brandTV,
+        inchs: otherData.inchs,
+        model: modelUpper,
+        client: otherData.client,
+        isDisabled: false
+      },
+      {
+        // 2. Usamos $inc solo para la cantidad numérica
+        $inc: { quantity: quantity }, 
+        // 3. Usamos $set para todo lo demás (que ya NO incluye quantity)
+        $set: { ...otherData, model: modelUpper } 
+      },
+      {
+        // 4. Solución al Warning de Mongoose: usamos returnDocument
+        returnDocument: 'after', 
+        upsert: true,
+        setDefaultsOnInsert: true
+      }
+    );
 
     return res.status(201).json({
       ok: true,
-      message: "Saved in the inventory",
-      mensaje: "Guardado en el inventario",
+      message: "Inventario procesado",
       data: inventory,
     });
+
   } catch (error) {
-    return res.status(500).json({
-      ok: false,
-      message: "ERROR INTERNAL SERVER",
-      mensaje: "ERROR INTERNO DEL SERVIDOR",
-      data: null,
-    });
+    console.error(error);
+    return res.status(500).json({ ok: false, message: "Error en el servidor" });
   }
 };
-
 const getInventory = async (req: Request, res: Response) => {
   try {
     const page = Number(req.query.page) || 1;
@@ -52,7 +52,7 @@ const getInventory = async (req: Request, res: Response) => {
       InventoryModel.find({ client: client, isDisabled: false })
         .skip(skip)
         .limit(limit),
-      InventoryModel.countDocuments({ isDisabled: false }),
+      InventoryModel.countDocuments({ client: client, isDisabled: false }),
     ]);
 
     if (!inventory) {
@@ -126,42 +126,29 @@ const getQuantityOfClient = async (req: Request, res: Response) => {
     const { clientName, brandTV, inches } = req.body;
 
     if (!clientName || !brandTV || !inches) {
-      return res.status(400).json({
-        ok: false,
-        message: "NO Data available",
-        mensaje: "No data disponible",
-        data: null,
-      });
+      return res.status(400).json({ ok: false, mensaje: "Faltan datos" });
     }
 
-    const quantityAvailable = await InventoryModel.findOne({
+    // CAMBIO: Usar .find() para traer todos los modelos que coincidan
+    const items = await InventoryModel.find({
       client: clientName,
       brandTV: brandTV,
       inchs: inches,
+      isDisabled: false,
+      quantity: { $gt: 0 } // Opcional: solo traer los que tienen stock
     }).select({ brandTV: 1, quantity: 1, model: 1 });
 
-    if (!quantityAvailable) {
-      return res.status(400).json({
-        ok: false,
-        message: "NO have stock",
-        mensaje: "No tiene stock",
-        data: 0,
-      });
+    if (!items || items.length === 0) {
+      return res.status(404).json({ ok: false, mensaje: "No hay stock disponible", data: [] });
     }
 
     return res.status(200).json({
       ok: true,
-      message: "Quantity",
-      mensaje: "Cantidad",
-      data: quantityAvailable,
+      mensaje: "Modelos encontrados",
+      data: items, // Ahora enviamos un Array
     });
   } catch (error) {
-    return res.status(500).json({
-      ok: true,
-      message: "Error internal server",
-      mensaje: "Error interno del servidor",
-      data: null,
-    });
+    return res.status(500).json({ ok: false, mensaje: "Error de servidor" });
   }
 };
 const UpdateQtyInventory = async (req: Request, res: Response) => {

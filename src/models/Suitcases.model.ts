@@ -63,6 +63,11 @@ const SuitCasesSchema = new Schema<ISuitCases>({
     enum: ["Invoiced", "Not invoiced"],
     default: "Not invoiced",
   },
+  isDelete: {
+    type: Boolean,
+    required: true,
+    default: false,
+  },
 });
 
 export default model<ISuitCases>("SuitCases", SuitCasesSchema);

@@ -26,7 +26,7 @@ suitCaseRouter.get(
 
 suitCaseRouter.put("/", validatJWT, suitCasesController.updateSuitCases);
 
-suitCaseRouter.delete("/", validatJWT, suitCasesController.deleteSuitCases);
+suitCaseRouter.delete("/:_id", validatJWT, suitCasesController.deleteSuitCases);
 
 suitCaseRouter.patch(
   "/billing",

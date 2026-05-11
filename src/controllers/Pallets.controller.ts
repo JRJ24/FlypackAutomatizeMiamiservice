@@ -465,7 +465,9 @@ const updatePalletsInvoices = async (req: Request, res: Response) => {
 const deletePallets = async (req: Request, res: Response) => {
   try {
     const { motherGuide, clientName } = req.body;
-
+    console.log(motherGuide);
+    console.log(clientName);
+    
     if (!motherGuide || !clientName) {
       return res.status(400).json({
         ok: false,

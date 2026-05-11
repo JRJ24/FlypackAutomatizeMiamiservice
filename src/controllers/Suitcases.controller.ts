@@ -74,6 +74,7 @@ const createSuitCases = async (req: Request, res: Response) => {
       dateArrive: data.dateArrive,
       suitCases: processedSuitCases,
       status: "Not invoiced",
+      isDelete: false
     };
 
     const suitCases = await SuitcasesModel.create(payloadSuit);
@@ -130,6 +131,7 @@ const getSuitCasesByMotherGuide = async (req: Request, res: Response) => {
 
     const getSuitCases = await SuitcasesModel.find({
       motherGuide: motherGuide,
+      isDelete: false
     });
 
     if (!getSuitCases || getSuitCases.length === 0) {
@@ -208,7 +210,7 @@ const getTotalSuits = async (req: Request, res: Response) => {
       return res.status(400).json({
         ok: false,
         message: "No data",
-        data: null
+        data: null,
       });
     }
 
@@ -217,8 +219,8 @@ const getTotalSuits = async (req: Request, res: Response) => {
       {
         $match: {
           clientName: clientName,
-          motherGuide: motherGuide
-        }
+          motherGuide: motherGuide,
+        },
       },
       // 2. Sumamos los campos dentro del array suitCases
       {
@@ -229,24 +231,23 @@ const getTotalSuits = async (req: Request, res: Response) => {
           totalRateSum: { $sum: "$suitCases.totalRate" },
           totalCostVersatSum: { $sum: "$suitCases.totalCostVersat" },
           totalUnitPriceSum: { $sum: "$suitCases.totalUnitPrice" },
-          totalUtilitySum: { $sum: "$suitCases.totalUtility" }
-        }
-      }
+          totalUtilitySum: { $sum: "$suitCases.totalUtility" },
+        },
+      },
     ]);
 
     if (result.length === 0) {
       return res.status(404).json({
         ok: false,
         message: "No se encontraron registros",
-        data: null
+        data: null,
       });
     }
 
     return res.status(200).json({
       ok: true,
-      data: result[0] // Retornamos el primer objeto con los totales
+      data: result[0], // Retornamos el primer objeto con los totales
     });
-
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -312,9 +313,42 @@ const updateSuitInvoices = async (req: Request, res: Response) => {
   }
 };
 
-
 const deleteSuitCases = async (req: Request, res: Response) => {
   try {
+    const { _id } = req.params;
+
+    if (!_id) {
+      return res.status(400).json({
+        ok: false,
+        message: "No Data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    const deleteSuit = await SuitcasesModel.findByIdAndUpdate(
+      _id,
+      {
+        isDelete: true,
+      },
+      { new: true },
+    );
+
+    if (!deleteSuit) {
+      return res.status(404).json({
+        ok: false,
+        message: "No Data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "The suit is delete",
+      mensaje: "La valija fue eliminada",
+      data: deleteSuit,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -333,5 +367,5 @@ export {
   updateSuitCases,
   deleteSuitCases,
   getTotalSuits,
-  updateSuitInvoices
+  updateSuitInvoices,
 };

@@ -48,7 +48,7 @@ palletRouter.patch(
   palletsController.updatePalletsInvoices
 )
 
-palletRouter.delete(
+palletRouter.put(
   '/',
   validatJWT,
   palletsController.deletePallets
