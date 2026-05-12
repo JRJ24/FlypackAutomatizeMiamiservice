@@ -9,6 +9,7 @@ import maintenanceRouter from "./routes/maintenances.routes";
 import invoicesRoutes from "./routes/invoices.routes";
 import suitCaseRouter from "./routes/suitcases.routes";
 import financesRouter from "./routes/finanzes.routes";
+import modelReferenceRouter from "./routes/modelsReference.routes";
 
 const router: Router = Router();
 
@@ -22,5 +23,6 @@ router.use("/maintenance", maintenanceRouter);
 router.use("/invoices", invoicesRoutes);
 router.use("/suitcases", suitCaseRouter);
 router.use("/finances", financesRouter);
+router.use("/modelsReference", modelReferenceRouter);
 
 export default router;

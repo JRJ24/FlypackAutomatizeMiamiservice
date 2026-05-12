@@ -270,6 +270,7 @@ const createPallets = async (req: Request, res: Response) => {
       const inventoryInfo = await InventoryModel.findOne({
         brandTV: item.model,
         inchs: item.inchs,
+        model: item.descriptionModel,
         client: data.clientName,
       });
 
