@@ -21,10 +21,17 @@ financesRouter.get(
   FinancesController.getAccountsCXC,
 );
 
+financesRouter.get(
+  "/getTotal",
+  validatJWT,
+  FinancesController.getTotal
+)
+
 financesRouter.patch(
   "/amountBanks",
   validatJWT,
   FinancesController.updateAmountBank
 )
+
 
 export default financesRouter;

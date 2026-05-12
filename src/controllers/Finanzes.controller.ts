@@ -212,7 +212,44 @@ const updateAmountBank = async (req: Request, res: Response) => {
       mensaje: "Exito",
       data: update,
     });
-  } catch (error) {}
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL SERVER",
+      mensaje: "ERROR INTERNO DEL SERVIDOR",
+      data: null,
+    });
+  }
+};
+
+const getTotal = async (req: Request, res: Response) => {
+  try {
+    const bankAccount = await AccountsAvailableModel.find({ isActive: true });
+    const totalBank = bankAccount.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+
+    const cxcAccounts = await AccountsCXCModel.find({ isActive: true });
+    const totalCXC = cxcAccounts.reduce((acc, curr) => acc + (curr.totalAmount || 0), 0);
+
+    const globalTotal = totalBank + totalCXC;
+
+    return res.status(200).json({
+      ok: true,
+      message: "Total",
+      mensaje: "Total",
+      data: {
+        totalBank,
+        totalCXC,
+        globalTotal
+      }
+    })
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL SERVER",
+      mensaje: "ERROR INTERNO DEL SERVIDOR",
+      data: null,
+    });
+  }
 };
 
 export {
@@ -221,5 +258,6 @@ export {
   deleteAccounts,
   getBanksAvailable,
   updateAmountBank,
-  getAccountsCXC
+  getAccountsCXC,
+  getTotal
 };
