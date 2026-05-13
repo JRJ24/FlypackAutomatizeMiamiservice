@@ -468,7 +468,7 @@ const deletePallets = async (req: Request, res: Response) => {
     const { motherGuide, clientName } = req.body;
     console.log(motherGuide);
     console.log(clientName);
-    
+
     if (!motherGuide || !clientName) {
       return res.status(400).json({
         ok: false,
@@ -509,6 +509,74 @@ const deletePallets = async (req: Request, res: Response) => {
   }
 };
 
+const deleteItemsPallets = async (req: Request, res: Response) => {
+  try {
+    const { _id, indexDisk, indexPallet, indexItem } = req.body;
+
+    if (!_id || !indexItem || !indexPallet || !indexDisk) {
+      return res.status(400).json({
+        ok: false,
+        message: "No data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    const docPallet = await PalletsModel.findById(_id);
+
+    if (!docPallet) {
+      return res.status(404).json({
+        ok: false,
+        message: "Not found",
+        mensaje: "No encontrado",
+        data: null,
+      });
+    }
+
+    const container = docPallet?.pallet[indexDisk];
+
+    if (!container) {
+      return res.status(404).json({
+        ok: false,
+        message: "Not found disk",
+        mensaje: "No encontrado contenedor",
+        data: null,
+      });
+    }
+
+    if (container && container.disk[indexPallet]) {
+      const palletSingle = container.disk[indexPallet];
+
+      if (!palletSingle) {
+        return res.status(404).json({
+          ok: false,
+          message: "Not found pallet",
+          mensaje: "No encontrado pallet",
+          data: null,
+        });
+      }
+
+      palletSingle.pallets.splice(indexItem, 1);
+
+      await docPallet.save();
+
+      return res.status(200).json({
+        ok: true,
+        message: "success",
+        mensaje: "Success",
+        data: null,
+      });
+    }
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "Error internal server",
+      mensaje: "Error interno del servidor",
+      data: null,
+    });
+  }
+};
+
 export {
   getPallets,
   createPallets,
@@ -518,4 +586,5 @@ export {
   getPalletsByClient,
   getPalletsDataProcess,
   getPalletsBillings,
+  deleteItemsPallets,
 };

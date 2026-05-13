@@ -54,4 +54,10 @@ palletRouter.put(
   palletsController.deletePallets
 )
 
+palletRouter.patch(
+  '/',
+  validatJWT,
+  palletsController.deleteItemsPallets
+)
+
 export default palletRouter;
