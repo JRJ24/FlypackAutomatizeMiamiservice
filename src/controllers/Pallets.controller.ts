@@ -45,11 +45,7 @@ const getPalletsByMotherGuide = async (req: Request, res: Response) => {
           isActive: true,
         },
       },
-      {
-        $addFields: {
-          tempCount: { $size: { $ifNull: ["$pallet.pallets", []] } },
-        },
-      },
+      // 1. Descomponemos el array de grupos (PLT#1, PLT#2...)
       { $unwind: "$pallet" },
       {
         $group: {
@@ -58,7 +54,9 @@ const getPalletsByMotherGuide = async (req: Request, res: Response) => {
           date: { $first: "$date" },
           motherGuide: { $first: "$motherGuide" },
           status: { $first: "$status" },
-          totalPalletsCount: { $sum: "$tempCount" },
+
+          totalPalletsCount: { $sum: 1 },
+
           totalWeightLB: { $sum: "$pallet.calcPallet.weightLB" },
         },
       },
@@ -511,9 +509,9 @@ const deletePallets = async (req: Request, res: Response) => {
 
 const deleteItemsPallets = async (req: Request, res: Response) => {
   try {
-    const { _id, indexDisk, indexPallet, indexItem } = req.body;
+    const { _id, indexPallet, indexItem } = req.body;
 
-    if (!_id || !indexItem || !indexPallet || !indexDisk) {
+    if (!_id || indexItem === undefined || indexPallet === undefined) {
       return res.status(400).json({
         ok: false,
         message: "No data",
@@ -533,9 +531,9 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
       });
     }
 
-    const container = docPallet?.pallet[indexDisk];
+    const palletSingle = docPallet?.pallet[indexPallet];
 
-    if (!container) {
+    if (!palletSingle) {
       return res.status(404).json({
         ok: false,
         message: "Not found disk",
@@ -544,10 +542,10 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
       });
     }
 
-    if (container && container.disk[indexPallet]) {
-      const palletSingle = container.disk[indexPallet];
+    if (palletSingle && palletSingle.pallets[indexItem]) {
+      const itemDeleted = palletSingle.pallets[indexItem];
 
-      if (!palletSingle) {
+      if (!itemDeleted) {
         return res.status(404).json({
           ok: false,
           message: "Not found pallet",
@@ -555,8 +553,6 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
           data: null,
         });
       }
-
-      const itemDeleted = palletSingle.pallets[indexItem];
 
       const restoreInv = await InventoryModel.findOneAndUpdate(
         {
@@ -573,12 +569,14 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
           ok: false,
           message: "No restore inventory",
           mensaje: "No inventario restaurado",
-          data: null
-        })
+          data: null,
+        });
       }
-      
       palletSingle.pallets.splice(indexItem, 1);
 
+      if (palletSingle.pallets.length === 0) {
+        docPallet.pallet.splice(indexPallet, 1);
+      }
       await docPallet.save();
 
       return res.status(200).json({

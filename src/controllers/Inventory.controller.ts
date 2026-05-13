@@ -195,7 +195,7 @@ const UpdateQtyInventory = async (req: Request, res: Response) => {
 
 const deleteInventory = async (req: Request, res: Response) => {
   try {
-    const { _id } = req.body;
+    const { _id } = req.params;
 
     const inventory = await InventoryModel.findByIdAndUpdate(_id, {
       isDisabled: true,

@@ -55,7 +55,7 @@ palletRouter.put(
 )
 
 palletRouter.patch(
-  '/',
+  '/itemDeleted',
   validatJWT,
   palletsController.deleteItemsPallets
 )

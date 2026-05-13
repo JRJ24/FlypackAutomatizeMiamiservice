@@ -28,3 +28,10 @@ export interface IAccountsCXC {
   // currency: string;
 }
 
+export interface IDebit{
+  bankAccountName: string,
+  date: string,
+  amount: number,
+  isActive: boolean,
+}
+

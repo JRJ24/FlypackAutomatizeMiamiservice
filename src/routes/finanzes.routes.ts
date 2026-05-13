@@ -33,5 +33,16 @@ financesRouter.patch(
   FinancesController.updateAmountBank
 )
 
+financesRouter.post(
+  "/debit",
+  validatJWT,
+  FinancesController.debitAccount
+)
+
+financesRouter.get(
+  "/getDebit/:date",
+  validatJWT,
+  FinancesController.getDebitAccount
+)
 
 export default financesRouter;

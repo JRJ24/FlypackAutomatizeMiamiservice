@@ -2,7 +2,7 @@ export interface IPalletsMain {
   clientName: string;
   date: string;
   motherGuide: string;
-  pallet: DiskContainers[];
+  pallet: IPalletSingle[];
   status: string;
   isDelete: boolean;
   isActive: boolean;

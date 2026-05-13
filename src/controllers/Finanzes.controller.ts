@@ -1,8 +1,10 @@
+import { IDebit } from "@/interfaces/finanzes/IAccounts";
 import AccountsAvailableModel from "./../models/Finanzes/AccountsAvailable.model";
 import AccountsCXCModel from "./../models/Finanzes/AccountsCXC.model";
 import AccountsReceivableModel from "./../models/Finanzes/AccountsReceivable.model";
 import { Request, Response } from "express";
 import mongoose from "mongoose";
+import DebitModel from "@/models/Finanzes/Debit.model";
 
 const managementAccounts = async (req: Request, res: Response) => {
   // const session = await mongoose.startSession();
@@ -225,10 +227,16 @@ const updateAmountBank = async (req: Request, res: Response) => {
 const getTotal = async (req: Request, res: Response) => {
   try {
     const bankAccount = await AccountsAvailableModel.find({ isActive: true });
-    const totalBank = bankAccount.reduce((acc, curr) => acc + (curr.amount || 0), 0);
+    const totalBank = bankAccount.reduce(
+      (acc, curr) => acc + (curr.amount || 0),
+      0,
+    );
 
     const cxcAccounts = await AccountsCXCModel.find({ isActive: true });
-    const totalCXC = cxcAccounts.reduce((acc, curr) => acc + (curr.totalAmount || 0), 0);
+    const totalCXC = cxcAccounts.reduce(
+      (acc, curr) => acc + (curr.totalAmount || 0),
+      0,
+    );
 
     const globalTotal = totalBank + totalCXC;
 
@@ -239,9 +247,108 @@ const getTotal = async (req: Request, res: Response) => {
       data: {
         totalBank,
         totalCXC,
-        globalTotal
+        globalTotal,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL SERVER",
+      mensaje: "ERROR INTERNO DEL SERVIDOR",
+      data: null,
+    });
+  }
+};
+
+const debitAccount = async (req: Request, res: Response) => {
+  try {
+    const { ...data }: IDebit = req.body;
+
+    if (!data) {
+      return res.status(400).json({
+        ok: false,
+        message: "No data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    const debitNew = await DebitModel.findOneAndUpdate(
+      { date: data.date },
+      data,
+      { upsert: true, new: true },
+    );
+
+    if (debitNew) {
+      const debitAccount = await AccountsAvailableModel.findOneAndUpdate(
+        { bankAccountName: data.bankAccountName },
+        { $set: { amount: data.amount } },
+        { new: true },
+      );
+
+      if (!debitAccount) {
+        return res.status(404).json({
+          ok: false,
+          message: "The account was not debited",
+          mensaje: "La cuenta no fue debitada",
+          data: null,
+        });
       }
-    })
+
+      return res.status(201).json({
+        ok: true,
+        message: "Successs",
+        mensaje: "Exito",
+        data: debitNew,
+      });
+    }
+
+    return res.status(404).json({
+      ok: false,
+      message: "The account was not debited",
+      mensaje: "La cuenta no fue debitada",
+      data: null,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL SERVER",
+      mensaje: "ERROR INTERNO DEL SERVIDOR",
+      data: null,
+    });
+  }
+};
+
+const getDebitAccount = async (req: Request, res: Response) => {
+  try {
+    const { date } = req.params;
+
+    if (!date) {
+      return res.status(400).json({
+        ok: false,
+        message: "No date",
+        mensaje: "No fecha",
+        data: null,
+      });
+    }
+
+    const getDebit = await DebitModel.find({ date: date });
+
+    if (!getDebit || getDebit.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        message: "No data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    return res.status(404).json({
+      ok: true,
+      message: "Success",
+      mensaje: "Exito",
+      data: getDebit,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -259,5 +366,7 @@ export {
   getBanksAvailable,
   updateAmountBank,
   getAccountsCXC,
-  getTotal
+  getTotal,
+  debitAccount,
+  getDebitAccount,
 };

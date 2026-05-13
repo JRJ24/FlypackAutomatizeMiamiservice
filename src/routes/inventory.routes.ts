@@ -35,7 +35,7 @@ inventoryRouter.patch(
 )
 
 inventoryRouter.delete(
-  '/',
+  '/:_id',
   validatJWT,
   InventoryController.deleteInventory
 )
