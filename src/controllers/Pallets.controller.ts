@@ -556,6 +556,27 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
         });
       }
 
+      const itemDeleted = palletSingle.pallets[indexItem];
+
+      const restoreInv = await InventoryModel.findOneAndUpdate(
+        {
+          brandTV: itemDeleted.model,
+          model: itemDeleted.descriptionModel,
+          inchs: itemDeleted.inchs,
+        },
+        { $inc: { quantity: itemDeleted.quantityUnit } },
+        { new: true },
+      );
+
+      if (!restoreInv) {
+        return res.status(400).json({
+          ok: false,
+          message: "No restore inventory",
+          mensaje: "No inventario restaurado",
+          data: null
+        })
+      }
+      
       palletSingle.pallets.splice(indexItem, 1);
 
       await docPallet.save();
