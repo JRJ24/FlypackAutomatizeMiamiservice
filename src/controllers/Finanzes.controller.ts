@@ -4,7 +4,7 @@ import AccountsCXCModel from "./../models/Finanzes/AccountsCXC.model";
 import AccountsReceivableModel from "./../models/Finanzes/AccountsReceivable.model";
 import { Request, Response } from "express";
 import mongoose from "mongoose";
-import DebitModel from "@/models/Finanzes/Debit.model";
+import DebitModel from "./../models/Finanzes/Debit.model";
 
 const managementAccounts = async (req: Request, res: Response) => {
   // const session = await mongoose.startSession();
