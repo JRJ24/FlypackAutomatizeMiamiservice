@@ -28,7 +28,12 @@ const managementAccounts = async (req: Request, res: Response) => {
     );
 
     if (!updateCXC) {
-      throw new Error("Insufficient balance or invoice not found");
+      return res.status(400).json({
+        ok: false,
+        message: 'Insufficient balance or invoice not found',
+        mensaje: 'Saldo insuficiente o factura no encontrada',
+        data: null
+      })
     }
 
     await AccountsAvailableModel.findOneAndUpdate(
@@ -273,20 +278,18 @@ const debitAccount = async (req: Request, res: Response) => {
       });
     }
 
-    const debitNew = await DebitModel.findOneAndUpdate(
-      { date: data.date },
-      data,
-      { upsert: true, new: true },
-    );
+    const debitNew = await DebitModel.create(data);
 
     if (debitNew) {
       const debitAccount = await AccountsAvailableModel.findOneAndUpdate(
         { bankAccountName: data.bankAccountName },
-        { $set: { amount: data.amount } },
+        { $inc: { amount: -data.amount } },
         { new: true },
       );
 
       if (!debitAccount) {
+        await DebitModel.findByIdAndDelete(debitNew._id);
+
         return res.status(404).json({
           ok: false,
           message: "The account was not debited",
@@ -321,7 +324,7 @@ const debitAccount = async (req: Request, res: Response) => {
 
 const getDebitAccount = async (req: Request, res: Response) => {
   try {
-    const { date } = req.params;
+    const { date } = req.query;
 
     if (!date) {
       return res.status(400).json({
@@ -332,18 +335,29 @@ const getDebitAccount = async (req: Request, res: Response) => {
       });
     }
 
-    const getDebit = await DebitModel.find({ date: date });
+    const start = new Date(date as string);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(date as string);
+    end.setHours(23, 59, 59, 999);
+
+    const getDebit = await DebitModel.find({
+      date: {
+        $gte: start,
+        $lte: end,
+      },
+    });
 
     if (!getDebit || getDebit.length === 0) {
       return res.status(404).json({
         ok: false,
         message: "No data",
         mensaje: "No data",
-        data: null,
+        data: [],
       });
     }
 
-    return res.status(404).json({
+    return res.status(200).json({
       ok: true,
       message: "Success",
       mensaje: "Exito",

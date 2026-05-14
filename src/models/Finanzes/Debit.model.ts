@@ -7,12 +7,17 @@ const DebitSchema = new Schema<IDebit>({
     required: true
   },
   date: {
-    type: String,
-    required: true
+    type: Date,
+    required: true,
+    default: Date.now,
   },
   amount: {
     type: Number,
     required: true
+  },
+  reason: {
+    type: String,
+    required: false,
   },
   isActive: {
     type: Boolean,

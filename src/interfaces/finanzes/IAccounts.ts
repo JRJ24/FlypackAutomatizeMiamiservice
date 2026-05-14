@@ -30,8 +30,9 @@ export interface IAccountsCXC {
 
 export interface IDebit{
   bankAccountName: string,
-  date: string,
+  date: Date,
   amount: number,
+  reason: string,
   isActive: boolean,
 }
 

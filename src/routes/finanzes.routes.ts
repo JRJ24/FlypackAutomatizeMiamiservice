@@ -40,7 +40,7 @@ financesRouter.post(
 )
 
 financesRouter.get(
-  "/getDebit/:date",
+  "/getDebit",
   validatJWT,
   FinancesController.getDebitAccount
 )

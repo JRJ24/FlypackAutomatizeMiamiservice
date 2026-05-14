@@ -82,6 +82,72 @@ const getInvoicesByMotherGuide = async (req: Request, res: Response) => {
   }
 };
 
+const searchInvoices = async (req: Request, res: Response) => {
+  try {
+    const { search } = req.params;
+    const searchValue = Array.isArray(search) ? search[0] : search;
+
+    if (!searchValue || searchValue.trim() === "") {
+      return res.status(400).json({
+        ok: false,
+        message: "Search term is required",
+        mensaje: "El término de búsqueda es requerido",
+        data: null,
+      });
+    }
+
+    const normalizedSearch = searchValue.trim();
+
+    const invoices = await InvoicesModel.find({
+      $or: [
+        {
+          motherGuide: {
+            $regex: normalizedSearch,
+            $options: "i",
+          },
+        },
+        {
+          client: {
+            $regex: normalizedSearch,
+            $options: "i",
+          },
+        },
+        {
+          invoiceNumber: {
+            $regex: normalizedSearch,
+            $options: "i",
+          },
+        },
+      ],
+    }).limit(20);
+
+    if (invoices.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        message: "No invoices found",
+        mensaje: "No se encontraron facturas",
+        data: [],
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Invoices found",
+      mensaje: "Facturas encontradas",
+      data: invoices,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      ok: false,
+      message: "Internal server error",
+      mensaje: "Error interno del servidor",
+      data: null,
+    });
+  }
+};
+
 const getInvoicesByMotherGuideAndClient = async (
   req: Request,
   res: Response,
@@ -201,17 +267,15 @@ const getInvoicesForClient = async (req: Request, res: Response) => {
   }
 };
 
-const paidInvoice = (req: Request, res: Response) => {
-  try {
-    
-  } catch (error) {
-    
-  }
-}
+// const paidInvoice = (req: Request, res: Response) => {
+//   try {
+//   } catch (error) {}
+// };
 
 export {
   createInvoices,
   getInvoicesByMotherGuide,
   getInvoicesByMotherGuideAndClient,
   getInvoicesForClient,
+  searchInvoices,
 };

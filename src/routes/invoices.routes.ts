@@ -1,32 +1,33 @@
-import { validatJWT } from '../middlewares/token';
-import * as InvoicesController from './../controllers/Invoices.controller';
-import express = require('express');
+import { validatJWT } from "../middlewares/token";
+import * as InvoicesController from "./../controllers/Invoices.controller";
+import express = require("express");
 
 const invoicesRoutes = express.Router();
 
-
-invoicesRoutes.post(
-  '/',
-  validatJWT,
-  InvoicesController.createInvoices
-)
+invoicesRoutes.post("/", validatJWT, InvoicesController.createInvoices);
 
 invoicesRoutes.get(
-  '/get/:motherGuide',
+  "/get/:motherGuide",
   validatJWT,
-  InvoicesController.getInvoicesByMotherGuide
-)
+  InvoicesController.getInvoicesByMotherGuide,
+);
 
 invoicesRoutes.get(
-  '/get2/:motherGuide/:client',
+  "/get4/:search",
   validatJWT,
-  InvoicesController.getInvoicesByMotherGuideAndClient
-)
+  InvoicesController.searchInvoices,
+);
 
 invoicesRoutes.get(
-  '/get3/:motherGuide/:clientName',
+  "/get2/:motherGuide/:client",
   validatJWT,
-  InvoicesController.getInvoicesForClient
-)
+  InvoicesController.getInvoicesByMotherGuideAndClient,
+);
+
+invoicesRoutes.get(
+  "/get3/:motherGuide/:clientName",
+  validatJWT,
+  InvoicesController.getInvoicesForClient,
+);
 
 export default invoicesRoutes;

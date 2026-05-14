@@ -19,7 +19,7 @@ const InvoicesSchema = new Schema<IInvoices>({
     type: String,
     required: false,
     unique: true,
-    sparse: true
+    sparse: true,
   },
   totalPallets: {
     type: String,
@@ -94,8 +94,10 @@ InvoicesSchema.pre("save", async function () {
     if (!counter) throw new Error("");
 
     const secuencia = counter.seq.toString().padStart(3, "0");
-    this.invoiceNumber = `INV${currentYear}-${secuencia}`;
 
+    const clientCode = this.client.trim().substring(0, 3).toUpperCase();
+
+    this.invoiceNumber = `${clientCode}${currentYear}-${secuencia}`;
   } catch (error) {
     throw error;
   }
