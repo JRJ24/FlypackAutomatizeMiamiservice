@@ -4,4 +4,6 @@ export interface IMaintenanceCost {
   customDutyVal: number;
   rate: number;
   ADM: number;
+  freightSuit: number,
+  rateSuit: number
 }

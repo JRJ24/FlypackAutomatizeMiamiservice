@@ -6,8 +6,9 @@ import type {
   ISuitCasesData,
 } from "@/interfaces/ISuitcasesmodel";
 import PriceModel from "./../models/PriceModel";
-import MaintenanceCostModel from "@/models/MaintenanceCost.model";
+import MaintenanceCostModel from "./../models/MaintenanceCost.model";
 import { CalcSuitCases } from "./../helpers/calcSuitCases";
+import InventoryModel from "./../models/Inventory.model";
 
 const createSuitCases = async (req: Request, res: Response) => {
   try {
@@ -27,15 +28,21 @@ const createSuitCases = async (req: Request, res: Response) => {
       });
     }
 
-    // const maintenance = await MaintenanceCostModel.findOne();
     const processedSuitCases: ISuitCasesData[] = [];
 
+    /*
+      -----------------------------------------
+      PROCESS SUITCASES
+      -----------------------------------------
+    */
+
     for (const item of data.items) {
-      const isSpecial = data.clientName === "Daniel" ? true : false;
+      const isSpecial = data.clientName === "Daniel";
+
       const priceBrand = await PriceModel.findOne({
         model: item.brandModel,
         inches: item.inches,
-        isSpecial: isSpecial,
+        isSpecial,
       });
 
       if (!priceBrand) {
@@ -46,18 +53,28 @@ const createSuitCases = async (req: Request, res: Response) => {
           data: null,
         });
       }
+      const maintenance = await MaintenanceCostModel.findOne();
 
-      console.log(priceBrand.unitPrice, "esto llega");
+      if (!maintenance) {
+        return res.status(404).json({
+          ok: false,
+          message: "Maintenance cost not found",
+          mensaje: "Costo de mantenimiento no encontrado",
+          data: null,
+        });
+      }
 
       const suitCalc = await CalcSuitCases(
         item.weightLB,
         item.quantity,
         priceBrand.unitPrice,
+        maintenance
       );
 
       processedSuitCases.push({
         brandModel: item.brandModel,
         inches: item.inches,
+        modelDescription: item.modelDescription,
         weightLB: suitCalc.weightLB,
         quantity: suitCalc.quantity,
         totalFreight: suitCalc.totalFreight,
@@ -68,13 +85,48 @@ const createSuitCases = async (req: Request, res: Response) => {
       });
     }
 
+    /*
+      -----------------------------------------
+      CHECK IF MOTHER GUIDE EXISTS
+      -----------------------------------------
+    */
+
+    const existingSuitCase = await SuitcasesModel.findOne({
+      motherGuide: data.motherGuide,
+    });
+
+    /*
+      -----------------------------------------
+      UPDATE EXISTING
+      -----------------------------------------
+    */
+
+    if (existingSuitCase) {
+      existingSuitCase.suitCases.push(...processedSuitCases);
+
+      await existingSuitCase.save();
+
+      return res.status(200).json({
+        ok: true,
+        message: "Updated successfully",
+        mensaje: "Actualizado correctamente",
+        data: existingSuitCase,
+      });
+    }
+
+    /*
+      -----------------------------------------
+      CREATE NEW
+      -----------------------------------------
+    */
+
     const payloadSuit: ISuitCases = {
       clientName: data.clientName,
       motherGuide: data.motherGuide,
       dateArrive: data.dateArrive,
       suitCases: processedSuitCases,
       status: "Not invoiced",
-      isDelete: false
+      isDelete: false,
     };
 
     const suitCases = await SuitcasesModel.create(payloadSuit);
@@ -90,11 +142,13 @@ const createSuitCases = async (req: Request, res: Response) => {
 
     return res.status(201).json({
       ok: true,
-      message: "Save",
+      message: "Saved successfully",
       mensaje: "Guardado correctamente",
       data: suitCases,
     });
   } catch (error) {
+    console.error(error);
+
     return res.status(500).json({
       ok: false,
       message: "ERROR INTERNAL SERVER",
@@ -106,6 +160,25 @@ const createSuitCases = async (req: Request, res: Response) => {
 
 const getSuitCases = async (req: Request, res: Response) => {
   try {
+    const getSuitCases = await SuitcasesModel.find({
+      isDelete: false,
+    }).limit(20);
+
+    if (!getSuitCases || getSuitCases.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        message: "No Suit with this mother Guide",
+        mensaje: "No valija con ese numero de guia",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Sucess",
+      mensaje: "Sucess",
+      data: getSuitCases,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -131,7 +204,7 @@ const getSuitCasesByMotherGuide = async (req: Request, res: Response) => {
 
     const getSuitCases = await SuitcasesModel.find({
       motherGuide: motherGuide,
-      isDelete: false
+      isDelete: false,
     });
 
     if (!getSuitCases || getSuitCases.length === 0) {
@@ -359,6 +432,93 @@ const deleteSuitCases = async (req: Request, res: Response) => {
   }
 };
 
+const deleteItemsSuitCases = async (req: Request, res: Response) => {
+  try {
+    const { _id, indexItem } = req.body;
+
+    if (!_id || indexItem === undefined) {
+      return res.status(400).json({
+        ok: false,
+        message: "No data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    const docSuitcases = await SuitcasesModel.findById(_id);
+
+    if (!docSuitcases) {
+      return res.status(404).json({
+        ok: false,
+        message: "Not found",
+        mensaje: "No encontrado",
+        data: null,
+      });
+    }
+
+    const suitSingle = docSuitcases.suitCases[indexItem];
+
+    if (!suitSingle) {
+      return res.status(404).json({
+        ok: false,
+        message: "Not found disk",
+        mensaje: "No encontrado contenedor",
+        data: null,
+      });
+    }
+
+    if (suitSingle) {
+      const itemDeleted = suitSingle;
+
+      if (!itemDeleted) {
+        return res.status(404).json({
+          ok: false,
+          message: "Not found pallet",
+          mensaje: "No encontrado pallet",
+          data: null,
+        });
+      }
+
+      const restoreInv = await InventoryModel.findOneAndUpdate(
+        {
+          brandTV: itemDeleted.brandModel,
+          model: itemDeleted.modelDescription,
+          inchs: itemDeleted.inches,
+        },
+        { $inc: { quantity: itemDeleted.quantity } },
+        { new: true },
+      );
+
+      if (!restoreInv) {
+        return res.status(400).json({
+          ok: false,
+          message: "No restore inventory",
+          mensaje: "No inventario restaurado",
+          data: null,
+        });
+      }
+
+      docSuitcases.suitCases.splice(indexItem, 1);
+
+      await docSuitcases.save();
+
+      return res.status(200).json({
+        ok: true,
+        message: "success",
+        mensaje: "Success",
+        data: null,
+      });
+    }
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "Error internal server",
+      mensaje: "Error interno del servidor",
+      data: null,
+    });
+  }
+};
+
 export {
   createSuitCases,
   getSuitCasesByMotherGuide,
@@ -368,4 +528,5 @@ export {
   deleteSuitCases,
   getTotalSuits,
   updateSuitInvoices,
+  deleteItemsSuitCases,
 };

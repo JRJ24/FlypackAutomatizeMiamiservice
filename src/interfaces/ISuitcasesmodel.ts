@@ -11,6 +11,7 @@ export interface ISuitCasesData {
   brandModel: string;
   inches: string;
   weightLB: number;
+  modelDescription: string;
   quantity: number;
   totalFreight: number;
   totalRate: number;
@@ -30,6 +31,7 @@ export interface ISuitCaseItem {
   brandModel: string;
   inches: string;
   weightLB: number;
+  modelDescription: string;
   quantity: number;
 }
 

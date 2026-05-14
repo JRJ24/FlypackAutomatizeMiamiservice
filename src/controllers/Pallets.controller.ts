@@ -13,6 +13,46 @@ import InventoryModel from "../models/Inventory.model";
 // No modified
 const getPallets = async (req: Request, res: Response) => {
   try {
+    const pallets = await PalletsModel.aggregate([
+      {
+        $match: {
+          isDelete: false,
+          isActive: true,
+        },
+      },
+      // 1. Descomponemos el array de grupos (PLT#1, PLT#2...)
+      { $unwind: "$pallet" },
+      {
+        $group: {
+          _id: { $trim: { input: "$clientName" } },
+          clientName: { $first: "$clientName" },
+          date: { $first: "$date" },
+          motherGuide: { $first: "$motherGuide" },
+          status: { $first: "$status" },
+
+          totalPalletsCount: { $sum: 1 },
+
+          totalWeightLB: { $sum: "$pallet.calcPallet.weightLB" },
+        },
+      },
+      { $sort: { clientName: 1 } },
+    ]).limit(20);
+
+    if (!pallets || pallets.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        message: "No found",
+        mensaje: "No encontrado",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Sucess",
+      mensaje: "Exito",
+      data: pallets,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,

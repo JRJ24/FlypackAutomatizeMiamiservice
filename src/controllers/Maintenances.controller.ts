@@ -2,6 +2,8 @@ import { Request, Response } from "express";
 import MaintenanceCostModel from "../models/MaintenanceCost.model";
 import PalletsModel from "./../models/Pallets.model";
 import { CalcCost } from "./../helpers/calcCost";
+import SuitcasesModel from "./../models/Suitcases.model";
+import { CalcSuitCases } from "./../helpers/calcSuitCases";
 
 const getMaintenance = async (req: Request, res: Response) => {
   try {
@@ -53,7 +55,13 @@ const UpdateMaintenances = async (req: Request, res: Response) => {
       });
     }
 
-    const activeGuides = await PalletsModel.find({ status: "Not invoiced" });
+    // =========================
+    // UPDATE PALLETS
+    // =========================
+
+    const activeGuides = await PalletsModel.find({
+      status: "Not invoiced",
+    });
 
     for (const guide of activeGuides) {
       let isModified = false;
@@ -72,6 +80,7 @@ const UpdateMaintenances = async (req: Request, res: Response) => {
           (acc: number, item: any) => acc + (item.totalUnitPrice || 0),
           0,
         );
+
         if (!singlePallet.calcPallet) continue;
 
         const weightLB = singlePallet.calcPallet.weightLB;
@@ -83,6 +92,7 @@ const UpdateMaintenances = async (req: Request, res: Response) => {
         );
 
         updateOperations[`pallet.${i}.calcPallet`] = newCalculations;
+
         isModified = true;
       }
 
@@ -90,6 +100,57 @@ const UpdateMaintenances = async (req: Request, res: Response) => {
         await PalletsModel.updateOne(
           { _id: guide._id },
           { $set: updateOperations },
+        );
+      }
+    }
+
+    // =========================
+    // UPDATE SUITCASES
+    // =========================
+
+    const activeSuitCases = await SuitcasesModel.find({
+      status: "Not invoiced",
+      isDelete: false,
+    });
+
+    for (const suitcaseDoc of activeSuitCases) {
+      let isModified = false;
+
+      const updatedSuitCases = [];
+
+      for (const suitCase of suitcaseDoc.suitCases) {
+        const recalculated = await CalcSuitCases(
+          suitCase.weightLB,
+          suitCase.quantity,
+          suitCase.totalUnitPrice / suitCase.quantity,
+          maintenance,
+        );
+
+        updatedSuitCases.push({
+          brandModel: suitCase.brandModel,
+          inches: suitCase.inches,
+          modelDescription: suitCase.modelDescription,
+          quantity: suitCase.quantity,
+
+          weightLB: recalculated.weightLB,
+          totalFreight: recalculated.totalFreight,
+          totalRate: recalculated.totalRate,
+          totalCostVersat: recalculated.totalCostVersat,
+          totalUnitPrice: recalculated.totalUnitPrice,
+          totalUtility: recalculated.totalUtility,
+        });
+
+        isModified = true;
+      }
+
+      if (isModified) {
+        await SuitcasesModel.updateOne(
+          { _id: suitcaseDoc._id },
+          {
+            $set: {
+              suitCases: updatedSuitCases,
+            },
+          },
         );
       }
     }
@@ -102,6 +163,7 @@ const UpdateMaintenances = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.log(error);
+
     return res.status(500).json({
       ok: false,
       message: "ERROR INTERNAL SERVER",

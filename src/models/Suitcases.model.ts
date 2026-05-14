@@ -14,6 +14,10 @@ const DataSuitCasesSchema = new Schema<ISuitCasesData>({
     type: Number,
     required: true,
   },
+  modelDescription: {
+    type: String,
+    required: true
+  },
   quantity: {
     type: Number,
     required: true,

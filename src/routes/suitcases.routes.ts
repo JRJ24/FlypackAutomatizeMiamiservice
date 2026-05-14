@@ -29,6 +29,12 @@ suitCaseRouter.put("/", validatJWT, suitCasesController.updateSuitCases);
 suitCaseRouter.delete("/:_id", validatJWT, suitCasesController.deleteSuitCases);
 
 suitCaseRouter.patch(
+  "/itemDeleted",
+  validatJWT,
+  suitCasesController.deleteItemsSuitCases,
+);
+
+suitCaseRouter.patch(
   "/billing",
   validatJWT,
   suitCasesController.updateSuitInvoices,

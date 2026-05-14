@@ -8,7 +8,9 @@ export const MaintenanceCostSeeders = async() => {
       dollarCost: 0.61,
       customDutyVal: 0.25,
       rate: 65,
-      ADM: 0
+      ADM: 0,
+      freightSuit: 36.677,
+      rateSuit: 0
     }
 
     const count = await MaintenanceCostModel.countDocuments();
