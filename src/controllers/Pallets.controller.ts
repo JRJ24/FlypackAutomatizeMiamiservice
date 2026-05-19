@@ -310,19 +310,21 @@ const createPallets = async (req: Request, res: Response) => {
         inchs: item.inchs,
         model: item.descriptionModel,
         client: data.clientName,
+        isDisabled: false
       });
 
       // Si no encuentra el producto, asignamos 0 o el valor por defecto que prefieras
       const unitPrice = pricesInfo ? pricesInfo.unitPrice : 0;
       const totalUnitPrice = unitPrice * item.quantityUnit;
-
-      if (inventoryInfo?.quantity) {
+      
+      console.log(inventoryInfo, "no");
+      if (inventoryInfo?.quantity && inventoryInfo.quantity !== undefined) {
         const restInventoryStock = inventoryInfo?.quantity - item.quantityUnit;
 
         const UpdateQtyInventory = await InventoryModel.findByIdAndUpdate(
           inventoryInfo._id,
           { quantity: restInventoryStock },
-          { returnDocument: "after" },
+          { new: true },
         );
 
         if (!UpdateQtyInventory) {

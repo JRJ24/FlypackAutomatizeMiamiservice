@@ -64,11 +64,37 @@ const createSuitCases = async (req: Request, res: Response) => {
         });
       }
 
+      const inventoryInfo = await InventoryModel.findOne({
+        brandTV: item.brandModel,
+        inchs: item.inches,
+        model: item.modelDescription,
+        client: data.clientName,
+      });
+
+      if (inventoryInfo?.quantity) {
+        const restInventoryStock = inventoryInfo?.quantity - item.quantity;
+
+        const UpdateQtyInventory = await InventoryModel.findByIdAndUpdate(
+          inventoryInfo._id,
+          { quantity: restInventoryStock },
+          { returnDocument: "after" },
+        );
+
+        if (!UpdateQtyInventory) {
+          return res.status(400).json({
+            ok: false,
+            message: "The inventory has not decreased",
+            mensaje: "No ha disminuido el inventario",
+            data: null,
+          });
+        }
+      }
+
       const suitCalc = await CalcSuitCases(
         item.weightLB,
         item.quantity,
         priceBrand.unitPrice,
-        maintenance
+        maintenance,
       );
 
       processedSuitCases.push({

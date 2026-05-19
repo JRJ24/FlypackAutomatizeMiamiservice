@@ -41,6 +41,15 @@ const InvoicesSchema = new Schema<IInvoices>({
     type: Number,
     required: false,
   },
+  costTransport: {
+    type: Number,
+    required: true,
+    default: 0,
+  },
+  totalSaleNoTransport: {
+    type: Number,
+    required: false,
+  },
   totalService: {
     type: Number,
     required: false,

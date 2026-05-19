@@ -14,6 +14,9 @@ const createInvoices = async (req: Request, res: Response) => {
       });
     }
 
+
+    data.totalSaleNoTransport = Number(data.totalSale) + Number(data.costTransport); 
+
     const invoice = await InvoicesModel.create(data);
 
     if (!invoice) {

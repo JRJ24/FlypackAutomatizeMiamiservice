@@ -5,6 +5,8 @@ export interface IInvoices {
   totalFreight: number;
   totalRate: number;
   totalADM: number;
+  costTransport: number;
+  totalSaleNoTransport: number;
   totalSale: number;
   totalUtility: number;
   totalCosts: number;
