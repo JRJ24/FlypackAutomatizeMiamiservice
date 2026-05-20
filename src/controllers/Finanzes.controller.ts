@@ -28,12 +28,12 @@ const managementAccounts = async (req: Request, res: Response) => {
     );
 
     if (!updateCXC) {
-      return res.status(400).json({
+      return res.status(404).json({
         ok: false,
-        message: 'Insufficient balance or invoice not found',
-        mensaje: 'Saldo insuficiente o factura no encontrada',
-        data: null
-      })
+        message: "Insufficient balance or invoice not found",
+        mensaje: "Saldo insuficiente o factura no encontrada",
+        data: null,
+      });
     }
 
     await AccountsAvailableModel.findOneAndUpdate(
@@ -49,7 +49,25 @@ const managementAccounts = async (req: Request, res: Response) => {
     );
 
     // await session.commitTransaction();
+    const payloadDebit: IDebit = {
+      bankAccountName: data.bankAccountName,
+      date: new Date(),
+      amount: data.amount,
+      reason: `Customer payment ${data.clientName} on the date of ${new Date().toLocaleDateString()}`,
+      status: data.status,
+      isActive: true,
+    };
 
+    const creditDebit = await DebitModel.create(payloadDebit);
+
+    if (!creditDebit) {
+      return res.status(404).json({
+        ok: false,
+        message: "Not recorded in history",
+        mensaje: "No registrado en el historial",
+        data: null,
+      });
+    }
     return res.status(200).json({
       ok: true,
       message: "Updated finances",

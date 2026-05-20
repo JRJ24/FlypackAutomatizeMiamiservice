@@ -317,7 +317,6 @@ const createPallets = async (req: Request, res: Response) => {
       const unitPrice = pricesInfo ? pricesInfo.unitPrice : 0;
       const totalUnitPrice = unitPrice * item.quantityUnit;
       
-      console.log(inventoryInfo, "no");
       if (inventoryInfo?.quantity && inventoryInfo.quantity !== undefined) {
         const restInventoryStock = inventoryInfo?.quantity - item.quantityUnit;
 

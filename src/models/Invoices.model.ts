@@ -32,14 +32,17 @@ const InvoicesSchema = new Schema<IInvoices>({
   totalFreight: {
     type: Number,
     required: true,
+    default: 0,
   },
   totalRate: {
     type: Number,
     required: true,
+    default: 0,
   },
   totalADM: {
     type: Number,
     required: false,
+    default: 0,
   },
   costTransport: {
     type: Number,
@@ -49,22 +52,27 @@ const InvoicesSchema = new Schema<IInvoices>({
   totalSaleNoTransport: {
     type: Number,
     required: false,
+    default: 0,
   },
   totalService: {
     type: Number,
     required: false,
+    default: 0,
   },
   totalCosts: {
     type: Number,
     required: true,
+    default: 0,
   },
   totalSale: {
     type: Number,
     required: true,
+    default: 0,
   },
   totalUtility: {
     type: Number,
     required: true,
+    default: 0,
   },
   status: {
     type: String,
@@ -74,7 +82,7 @@ const InvoicesSchema = new Schema<IInvoices>({
   },
   type: {
     type: String,
-    required: true,
+    required: false,
     enum: ["LUGGAGES", "PALLETS"],
   },
   totalPaid: {

@@ -19,6 +19,10 @@ const DebitSchema = new Schema<IDebit>({
     type: String,
     required: false,
   },
+  status: {
+    type: String,
+    required: true,
+  },
   isActive: {
     type: Boolean,
     default: true,

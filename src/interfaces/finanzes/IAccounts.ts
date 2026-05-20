@@ -33,6 +33,7 @@ export interface IDebit{
   date: Date,
   amount: number,
   reason: string,
+  status: string,
   isActive: boolean,
 }
 
