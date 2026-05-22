@@ -7,8 +7,8 @@ import mongoose from "mongoose";
 import DebitModel from "./../models/Finanzes/Debit.model";
 
 const managementAccounts = async (req: Request, res: Response) => {
-  // const session = await mongoose.startSession();
-  // session.startTransaction();
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     const { ...data } = req.body;
 
@@ -39,16 +39,16 @@ const managementAccounts = async (req: Request, res: Response) => {
     await AccountsAvailableModel.findOneAndUpdate(
       { bankAccountName: data.bankAccountName },
       { $inc: { amount: data.amount } },
-      // { session },
+      { session },
     );
 
     await AccountsCXCModel.findOneAndUpdate(
       { clientName: data.clientName },
       { $inc: { totalAmount: -data.amount } },
-      { upsert: true /* session */ },
+      { upsert: true, session  },
     );
 
-    // await session.commitTransaction();
+    await session.commitTransaction();
     const payloadDebit: IDebit = {
       bankAccountName: data.bankAccountName,
       date: new Date(),
@@ -75,7 +75,7 @@ const managementAccounts = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error(error);
-    // await session.abortTransaction();
+    await session.abortTransaction();
     return res.status(500).json({
       ok: false,
       message: "ERROR INTERNAL SERVER",
@@ -83,7 +83,7 @@ const managementAccounts = async (req: Request, res: Response) => {
       data: null,
     });
   } finally {
-    // session.endSession();
+    session.endSession();
   }
 };
 const createAccounts = async (req: Request, res: Response) => {

@@ -3,7 +3,6 @@ import { IMaintenanceCost } from "@/interfaces/maintenance/IMaintenance";
 
 export const CalcSuitCases = async (weightLB: number, quantity: number, price: number,  maintenance: IMaintenanceCost) => {
   try {
-
     const totalWeight = weightLB * quantity;
     const totalFreight = totalWeight * maintenance.freightSuit;
     const totalRate = totalWeight * maintenance.rateSuit;
