@@ -1,63 +1,55 @@
-import { validatJWT } from '../middlewares/token';
-import * as palletsController from './../controllers/Pallets.controller';
-import express = require('express');
+import { validatJWT } from "../middlewares/token";
+import * as palletsController from "./../controllers/Pallets.controller";
+import express = require("express");
 
 const palletRouter = express.Router();
 
-palletRouter.post(
-  '/',
-  validatJWT,
-  palletsController.createPallets
-)
+palletRouter.post("/", validatJWT, palletsController.createPallets);
+
+palletRouter.get("/", validatJWT, palletsController.getPallets);
 
 palletRouter.get(
-  '/',
+  "/getTotal",
   validatJWT,
-  palletsController.getPallets
-)
-
+  palletsController.getPalletsDataProcess,
+);
 
 palletRouter.get(
-  '/getTotal',
+  "/motherGuide/:motherGuide",
   validatJWT,
-  palletsController.getPalletsDataProcess
-)
+  palletsController.getPalletsByMotherGuide,
+);
 
 palletRouter.get(
-  '/motherGuide/:motherGuide',
+  "/client/:clientName/:motherGuide",
   validatJWT,
-  palletsController.getPalletsByMotherGuide
-)
+  palletsController.getPalletsByClient,
+);
 
 palletRouter.get(
-  '/client/:clientName/:motherGuide',
+  "/invoicesBilling",
   validatJWT,
-  palletsController.getPalletsByClient
-)
-
-palletRouter.get(
-  '/invoicesBilling',
-  validatJWT,
-  palletsController.getPalletsBillings
-)
-
+  palletsController.getPalletsBillings,
+);
 
 palletRouter.patch(
-  '/billing',
+  "/billing",
   validatJWT,
-  palletsController.updatePalletsInvoices
-)
-
-palletRouter.put(
-  '/',
-  validatJWT,
-  palletsController.deletePallets
-)
+  palletsController.updatePalletsInvoices,
+);
 
 palletRouter.patch(
-  '/itemDeleted',
+  "/motherGuide",
   validatJWT,
-  palletsController.deleteItemsPallets
-)
+  palletsController.updateGuide,
+);
+
+palletRouter.put("/", validatJWT, palletsController.deletePallets);
+
+palletRouter.patch(
+  "/itemDeleted",
+  validatJWT,
+  palletsController.deleteItemsPallets,
+);
 
 export default palletRouter;

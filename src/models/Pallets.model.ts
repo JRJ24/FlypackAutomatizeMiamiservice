@@ -133,7 +133,7 @@ const PalletsMainSchema = new Schema<IPalletsMain>(
     },
     motherGuide: {
       type: String,
-      required: true,
+      required: false,
     },
     pallet: {
       type: [PalletSingleSchema],
@@ -141,7 +141,7 @@ const PalletsMainSchema = new Schema<IPalletsMain>(
     },
     status: {
       type: String,
-      enum: ["Invoiced", "Not invoiced"],
+      enum: ["Invoiced", "Not invoiced", "Pending guidance"],
       default: "Not invoiced",
     },
     isDelete: {

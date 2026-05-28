@@ -13,45 +13,64 @@ import InventoryModel from "../models/Inventory.model";
 // No modified
 const getPallets = async (req: Request, res: Response) => {
   try {
-    const pallets = await PalletsModel.aggregate([
+    const page = Number(req.query.page) || 1;
+    const limit = 10;
+    const skip = (page - 1) * limit;
+
+    const result = await PalletsModel.aggregate([
       {
         $match: {
           isDelete: false,
           isActive: true,
         },
       },
-      // 1. Descomponemos el array de grupos (PLT#1, PLT#2...)
       { $unwind: "$pallet" },
       {
         $group: {
-          _id: { $trim: { input: "$clientName" } },
+          _id: {
+            clientName: { $trim: { input: "$clientName" } },
+            motherGuide: "$motherGuide",
+          },
+
           clientName: { $first: "$clientName" },
           date: { $first: "$date" },
           motherGuide: { $first: "$motherGuide" },
           status: { $first: "$status" },
 
           totalPalletsCount: { $sum: 1 },
-
           totalWeightLB: { $sum: "$pallet.calcPallet.weightLB" },
         },
       },
-      { $sort: { clientName: 1 } },
-    ]).limit(20);
+      {
+        $sort: {
+          date: -1,
+        },
+      },
+      {
+        $facet: {
+          data: [{ $skip: skip }, { $limit: limit }],
+          total: [{ $count: "count" }],
+        },
+      },
+    ]);
 
-    if (!pallets || pallets.length === 0) {
-      return res.status(404).json({
-        ok: false,
-        message: "No found",
-        mensaje: "No encontrado",
-        data: null,
-      });
-    }
+    const pallets = result[0]?.data || [];
+    const totalItems = result[0]?.total[0]?.count || 0;
+    const totalPages = Math.ceil(totalItems / limit);
 
     return res.status(200).json({
       ok: true,
-      message: "Sucess",
-      mensaje: "Exito",
+      message: "Pallets found",
+      mensaje: "Pallets encontrados",
       data: pallets,
+      pagination: {
+        page,
+        limit,
+        totalItems,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -67,8 +86,11 @@ const getPallets = async (req: Request, res: Response) => {
 const getPalletsByMotherGuide = async (req: Request, res: Response) => {
   try {
     const { motherGuide } = req.params;
+    const pending = req.query.pending;
 
-    if (!motherGuide) {
+    const isPending = pending === "on" || pending === "true";
+
+    if (!isPending && !motherGuide) {
       return res.status(400).json({
         ok: false,
         message: "No mother guide",
@@ -77,13 +99,22 @@ const getPalletsByMotherGuide = async (req: Request, res: Response) => {
       });
     }
 
-    const pallets = await PalletsModel.aggregate([
-      {
-        $match: {
+    const matchStage = isPending
+      ? {
+          isDelete: false,
+          isActive: true,
+          status: "Pending guidance",
+          motherGuide: { $regex: /^No Guide - / },
+        }
+      : {
           motherGuide: motherGuide,
           isDelete: false,
           isActive: true,
-        },
+        };
+
+    const pallets = await PalletsModel.aggregate([
+      {
+        $match: matchStage,
       },
       // 1. Descomponemos el array de grupos (PLT#1, PLT#2...)
       { $unwind: "$pallet" },
@@ -291,6 +322,9 @@ const createPallets = async (req: Request, res: Response) => {
     const { pallets, calcPallet } = data.pallet;
     const weightLB = calcPallet.weightLB;
 
+    const motherGuideValue = data.motherGuide?.trim();
+    const isMotherGuideEmpty = !motherGuideValue;
+
     // 1. Buscar precios unitarios en la BD y calcular totales por ítem
     let globalTotalPrice = 0;
     const enrichedPallets: IPalletsDetails[] = [];
@@ -310,13 +344,13 @@ const createPallets = async (req: Request, res: Response) => {
         inchs: item.inchs,
         model: item.descriptionModel,
         client: data.clientName,
-        isDisabled: false
+        isDisabled: false,
       });
 
       // Si no encuentra el producto, asignamos 0 o el valor por defecto que prefieras
       const unitPrice = pricesInfo ? pricesInfo.unitPrice : 0;
       const totalUnitPrice = unitPrice * item.quantityUnit;
-      
+
       if (inventoryInfo?.quantity && inventoryInfo.quantity !== undefined) {
         const restInventoryStock = inventoryInfo?.quantity - item.quantityUnit;
 
@@ -367,9 +401,20 @@ const createPallets = async (req: Request, res: Response) => {
     //   clientName: data.clientName,
     // });
 
-    const allGuidesSameMother = await PalletsModel.find({
-      motherGuide: data.motherGuide,
-    });
+    const queryToCount = isMotherGuideEmpty
+      ? {
+          clientName: data.clientName,
+          status: "Pending guidance",
+          isActive: true,
+          isDelete: false,
+        }
+      : {
+          motherGuide: motherGuideValue,
+          clientName: data.clientName,
+          isActive: true,
+          isDelete: false,
+        };
+    const allGuidesSameMother = await PalletsModel.find(queryToCount);
 
     const currentPalletCount = allGuidesSameMother.reduce((total, guide) => {
       const guidePalletsCount =
@@ -385,21 +430,32 @@ const createPallets = async (req: Request, res: Response) => {
       calcPallet: palletCalc,
     };
 
-    const saved = await PalletsModel.findOneAndUpdate(
-      { motherGuide: data.motherGuide, clientName: data.clientName },
-      {
-        $setOnInsert: {
-          date: data.date,
-          status: "Not invoiced",
-          isActive: true,
-          isDelete: false,
-        },
-        $push: {
-          pallet: newPalletSingle, // Agrega el pallet al arreglo
-        },
+    const generatedMotherGuide = isMotherGuideEmpty
+      ? `No Guide - ${currentPalletCount + 1}`
+      : motherGuideValue;
+
+    const query = {
+      motherGuide: generatedMotherGuide,
+      clientName: data.clientName,
+    };
+    const update = {
+      $setOnInsert: {
+        date: data.date,
+        motherGuide: generatedMotherGuide,
+        clientName: data.clientName,
+        isActive: true,
+        isDelete: false,
+        status: isMotherGuideEmpty ? "Pending guidance" : "Not invoiced",
       },
-      { upsert: true, new: true },
-    );
+      $push: {
+        pallet: newPalletSingle,
+      },
+    };
+
+    const saved = await PalletsModel.findOneAndUpdate(query, update, {
+      upsert: true,
+      new: true,
+    });
 
     if (!saved) {
       return res.status(400).json({
@@ -637,6 +693,53 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
   }
 };
 
+const updateGuide = async (req: Request, res: Response) => {
+  try {
+    const { _id, motherGuide } = req.body;
+    
+    console.log(motherGuide)
+    console.log(_id)
+
+    if (!motherGuide && !_id) {
+      return res.status(404).json({
+        ok: false,
+        message: "No founded",
+        mensaje: "No encontrado",
+        data: null,
+      });
+    }
+
+    const update = await PalletsModel.findByIdAndUpdate(
+      _id,
+      { motherGuide: motherGuide, status: "Not invoiced" },
+      { new: true },
+    );
+
+    if (!update) {
+      return res.status(404).json({
+        ok: false,
+        message: "No founded",
+        mensaje: "No encontrado",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Update",
+      mensaje: "Update",
+      data: update,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      ok: false,
+      message: "Error internal server",
+      mensaje: "Error interno del servidor",
+      data: null,
+    });
+  }
+};
 export {
   getPallets,
   createPallets,
@@ -647,4 +750,5 @@ export {
   getPalletsDataProcess,
   getPalletsBillings,
   deleteItemsPallets,
+  updateGuide
 };
