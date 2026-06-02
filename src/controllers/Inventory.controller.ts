@@ -14,13 +14,13 @@ const createInventory = async (req: Request, res: Response) => {
         inchs: otherData.inchs,
         model: modelUpper,
         client: otherData.client,
-        isDisabled: false
+        // isDisabled: false
       },
       {
         // 2. Usamos $inc solo para la cantidad numérica
         $inc: { quantity: quantity }, 
         // 3. Usamos $set para todo lo demás (que ya NO incluye quantity)
-        $set: { ...otherData, model: modelUpper } 
+        $set: { ...otherData, model: modelUpper, isDisabled: false } 
       },
       {
         // 4. Solución al Warning de Mongoose: usamos returnDocument

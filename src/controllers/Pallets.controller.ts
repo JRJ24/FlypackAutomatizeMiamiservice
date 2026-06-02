@@ -650,13 +650,16 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
           data: null,
         });
       }
+      const query = {
+        brandTV: itemDeleted.model,
+        model: itemDeleted.descriptionModel,
+        inchs: itemDeleted.inchs,
+        client: docPallet.clientName,
+        isDisabled: false
+      };
 
       const restoreInv = await InventoryModel.findOneAndUpdate(
-        {
-          brandTV: itemDeleted.model,
-          model: itemDeleted.descriptionModel,
-          inchs: itemDeleted.inchs,
-        },
+        query,
         { $inc: { quantity: itemDeleted.quantityUnit } },
         { new: true },
       );
@@ -696,9 +699,9 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
 const updateGuide = async (req: Request, res: Response) => {
   try {
     const { _id, motherGuide } = req.body;
-    
-    console.log(motherGuide)
-    console.log(_id)
+
+    console.log(motherGuide);
+    console.log(_id);
 
     if (!motherGuide && !_id) {
       return res.status(404).json({
@@ -750,5 +753,5 @@ export {
   getPalletsDataProcess,
   getPalletsBillings,
   deleteItemsPallets,
-  updateGuide
+  updateGuide,
 };
