@@ -1,6 +1,22 @@
 import { Request, Response } from "express";
 import ProcessModel from "../models/Process.model";
 
+const ADMIN_ONLY_PATHS = ["/maintenances", "/invoices", "/finances"];
+
+const buildVisibleProcessQuery = (req: Request) => {
+  const role = (req as any).user?.role;
+  const query: Record<string, any> = {
+    isDelete: false,
+    isActive: true,
+  };
+
+  if (role !== "FLYPACKADMIN") {
+    query.path = { $nin: ADMIN_ONLY_PATHS };
+  }
+
+  return query;
+};
+
 const createProcess = async (req: Request, res: Response) => {
   try {
     const { ...data } = req.body;
@@ -47,13 +63,10 @@ const getProcess = async (req: Request, res: Response) => {
     const limit = Number(req.query.limit) || 10;
 
     const skip = (page - 1) * limit;
-    const query = {
-      isDelete: false,
-      isActive: true,
-    };
+    const query = buildVisibleProcessQuery(req);
     const [process, totalItems] = await Promise.all([
       ProcessModel.find(query).skip(skip).limit(limit),
-      ProcessModel.countDocuments(),
+      ProcessModel.countDocuments(query),
     ]);
 
     if (process.length === 0) {
@@ -91,13 +104,10 @@ const getProcess = async (req: Request, res: Response) => {
 
 const getProcessNoLimit = async (req: Request, res: Response) => {
   try {
-    const query = {
-      isDelete: false,
-      isActive: true,
-    };
+    const query = buildVisibleProcessQuery(req);
     const [process, totalItems] = await Promise.all([
       ProcessModel.find(query),
-      ProcessModel.countDocuments(),
+      ProcessModel.countDocuments(query),
     ]);
 
     if (!process) {

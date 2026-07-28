@@ -22,7 +22,7 @@ priceRouter.get(
 priceRouter.get(
   '/model',
   validatJWT,
-  authorize(...ROLE_GROUPS.admin),
+  authorize(...ROLE_GROUPS.operations),
   priceController.getPriceModel
 )
 

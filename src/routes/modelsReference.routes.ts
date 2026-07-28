@@ -9,7 +9,7 @@ const modelReferenceRouter = express.Router();
 modelReferenceRouter.post(
   '/',
   validatJWT,
-  authorize(...ROLE_GROUPS.admin),
+  authorize(...ROLE_GROUPS.operations),
   modelReferenceController.createNewModelReference
 )
 
