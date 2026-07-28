@@ -29,7 +29,13 @@ const UsersSchema = new Schema<IUserModel>(
     },
     role: {
       type: String,
-      enum: ["FLYPACKADMIN", "FLYPACKMIAMI", "FLYPACKJDG", "CLIENTFLYPACK", "USER"],
+      enum: [
+        "FLYPACKADMIN",
+        "FLYPACKMIAMI",
+        "FLYPACKJDG",
+        "CLIENTFLYPACK",
+        "USER",
+      ],
       default: "USER",
       required: true,
     },
@@ -88,17 +94,13 @@ UsersSchema.pre("findOneAndUpdate", function () {
 
   if (update.email) {
     const plainEmail = safeDecrypt(update.email).trim().toLowerCase();
-    update.emailIndex = crypto
-      .createHash("sha256")
-      .update(plainEmail)
-      .digest("hex");
+
+    update.emailIndex = plainEmail;
 
     update.email = encrypt(plainEmail);
   }
-
   this.setUpdate(update);
 });
-
 
 UsersSchema.post("init", function (doc) {
   try {
