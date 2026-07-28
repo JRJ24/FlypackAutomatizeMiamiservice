@@ -7,6 +7,11 @@ const InvoicesSchema = new Schema<IInvoices>({
     type: String,
     required: true,
   },
+  clientCode: {
+    type: String,
+    required: false,
+    index: true,
+  },
   motherGuide: {
     type: String,
     required: true,

@@ -23,6 +23,11 @@ const InventorySchema = new Schema<IInventoryTV>({
     type: String,
     required: true
   },
+  clientCode: {
+    type: String,
+    required: false,
+    index: true,
+  },
   lastMiamiInvoiceNumber: {
     type: String,
     required: false,

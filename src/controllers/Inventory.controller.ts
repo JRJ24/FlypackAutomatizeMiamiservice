@@ -3,6 +3,7 @@ import InventoryModel from "../models/Inventory.model";
 import InventoryMovementModel from "../models/InventoryMovement.model";
 import { normalizeMiamiInvoiceNumber } from "../helpers/miamiInvoiceNumber";
 import { normalizeClientName, withDecryptedClientFields } from "../helpers/clientName";
+import { getClientCodeForName } from "../helpers/clientIdentity";
 
 const serializeInventory = (inventory: any) => withDecryptedClientFields(inventory);
 
@@ -13,6 +14,7 @@ const createInventory = async (req: Request, res: Response) => {
     const quantityNumber = Number(quantity);
     const normalizedMiamiInvoiceNumber = normalizeMiamiInvoiceNumber(miamiInvoiceNumber);
     const normalizedClient = normalizeClientName(otherData.client);
+    const clientCode = await getClientCodeForName(normalizedClient);
 
     if (!Number.isFinite(quantityNumber) || quantityNumber <= 0) {
       return res.status(400).json({
@@ -48,6 +50,7 @@ const createInventory = async (req: Request, res: Response) => {
     const inventoryPayload = {
       ...otherData,
       client: normalizedClient,
+      ...(clientCode ? { clientCode } : {}),
       model: modelUpper,
       ...(normalizedMiamiInvoiceNumber
         ? { lastMiamiInvoiceNumber: normalizedMiamiInvoiceNumber }
@@ -258,6 +261,7 @@ const UpdateQtyInventory = async (req: Request, res: Response) => {
 
     if (data.client) {
       data.client = normalizeClientName(data.client);
+      data.clientCode = await getClientCodeForName(data.client);
     }
 
     const inventory = await InventoryModel.findByIdAndUpdate(_id, data, {

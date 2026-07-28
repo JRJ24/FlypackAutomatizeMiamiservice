@@ -12,6 +12,7 @@ export interface IInvoices {
   totalCosts: number;
   totalService: number;
   client: string;
+  clientCode?: string;
   motherGuide: string;
   date: string;
   status: string;

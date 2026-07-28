@@ -51,6 +51,13 @@ palletRouter.patch(
   palletsController.updateGuide,
 );
 
+palletRouter.patch(
+  "/arrival",
+  validatJWT,
+  authorize(...ROLE_GROUPS.operations),
+  palletsController.updatePalletArrivalStatus,
+);
+
 palletRouter.put("/", validatJWT, authorize(...ROLE_GROUPS.operations), palletsController.deletePallets);
 
 palletRouter.patch(

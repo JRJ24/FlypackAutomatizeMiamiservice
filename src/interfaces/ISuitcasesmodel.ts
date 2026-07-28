@@ -2,6 +2,10 @@ export interface ISuitCases {
   clientName: string;
   motherGuide: string;
   miamiInvoiceNumber?: string;
+  clientCode?: string;
+  arrivalStatus?: string;
+  arrivedAt?: Date;
+  deliveredAt?: Date;
   dateArrive: string;
   suitCases: ISuitCasesData[];
   status: string;
@@ -25,6 +29,7 @@ export interface ISuitCasesClientSend {
   clientName: string;
   motherGuide: string;
   miamiInvoiceNumber?: string;
+  clientCode?: string;
   dateArrive: string;
   items: ISuitCaseItem[];
 }

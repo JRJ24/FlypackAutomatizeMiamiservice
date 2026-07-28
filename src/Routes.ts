@@ -10,6 +10,7 @@ import invoicesRoutes from "./routes/invoices.routes";
 import suitCaseRouter from "./routes/suitcases.routes";
 import financesRouter from "./routes/finanzes.routes";
 import modelReferenceRouter from "./routes/modelsReference.routes";
+import clientPortalRouter from "./routes/clientPortal.routes";
 
 const router: Router = Router();
 
@@ -24,5 +25,6 @@ router.use("/invoices", invoicesRoutes);
 router.use("/suitcases", suitCaseRouter);
 router.use("/finances", financesRouter);
 router.use("/modelsReference", modelReferenceRouter);
+router.use("/client-portal", clientPortalRouter);
 
 export default router;

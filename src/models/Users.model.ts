@@ -39,6 +39,14 @@ const UsersSchema = new Schema<IUserModel>(
       default: "USER",
       required: true,
     },
+    clientCode: {
+      type: String,
+      required: false,
+      unique: true,
+      sparse: true,
+      trim: true,
+      uppercase: true,
+    },
     mustchangePassword: {
       type: Boolean,
       isRequired: true,

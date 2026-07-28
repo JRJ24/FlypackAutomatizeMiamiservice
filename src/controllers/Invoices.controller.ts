@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import InvoicesModel from "../models/Invoices.model";
 import { normalizeClientName, withDecryptedClientFields } from "../helpers/clientName";
+import { getClientCodeForName } from "../helpers/clientIdentity";
 
 const serializeInvoice = (invoice: any) => withDecryptedClientFields(invoice);
 
@@ -68,6 +69,7 @@ const createInvoices = async (req: Request, res: Response) => {
 
     if (data.client) {
       data.client = normalizeClientName(data.client);
+      data.clientCode = await getClientCodeForName(data.client);
     }
 
 

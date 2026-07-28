@@ -8,6 +8,7 @@ export interface IUserModel extends mongoose.Document {
   password?: string;
   googleId?: string;
   role?: string;
+  clientCode?: string;
   mustchangePassword: boolean;
   resetPasswordToken: string;
   resetPasswordExpires: Number;

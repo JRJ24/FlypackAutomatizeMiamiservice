@@ -45,4 +45,11 @@ suitCaseRouter.patch(
   authorize(...ROLE_GROUPS.admin),
   suitCasesController.updateSuitInvoices,
 );
+
+suitCaseRouter.patch(
+  "/arrival",
+  validatJWT,
+  authorize(...ROLE_GROUPS.operations),
+  suitCasesController.updateSuitcaseArrivalStatus,
+);
 export default suitCaseRouter;

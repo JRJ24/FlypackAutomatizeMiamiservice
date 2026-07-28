@@ -3,6 +3,10 @@ export interface IPalletsMain {
   date: string;
   motherGuide: string;
   miamiInvoiceNumber?: string;
+  clientCode?: string;
+  arrivalStatus?: string;
+  arrivedAt?: Date;
+  deliveredAt?: Date;
   pallet: IPalletSingle[];
   status: string;
   isDelete: boolean;
@@ -51,6 +55,7 @@ export interface IPalletNew {
   date: string;
   motherGuide: string;
   miamiInvoiceNumber?: string;
+  clientCode?: string;
   pallet: {
     palletDescription: string;
     pallets: {

@@ -12,6 +12,7 @@ import InventoryModel from "./../models/Inventory.model";
 import InventoryMovementModel from "../models/InventoryMovement.model";
 import { normalizeMiamiInvoiceNumber } from "../helpers/miamiInvoiceNumber";
 import { normalizeClientName, withDecryptedClientFields } from "../helpers/clientName";
+import { getClientCodeForName } from "../helpers/clientIdentity";
 import { findInventoryItemForClient } from "../helpers/inventoryLink";
 
 const serializeSuitcase = (suitcase: any) => withDecryptedClientFields(suitcase);
@@ -47,6 +48,7 @@ const createSuitCases = async (req: Request, res: Response) => {
 
     const data: ISuitCasesClientSend = req.body;
     const clientName = normalizeClientName(data?.clientName);
+    const clientCode = await getClientCodeForName(clientName);
     const normalizedMiamiInvoiceNumber = normalizeMiamiInvoiceNumber(
       data.miamiInvoiceNumber,
     );
@@ -166,6 +168,9 @@ const createSuitCases = async (req: Request, res: Response) => {
 
     if (existingSuitCase) {
       existingSuitCase.clientName = clientName;
+      if (clientCode) {
+        existingSuitCase.clientCode = clientCode;
+      }
       if (normalizedMiamiInvoiceNumber) {
         existingSuitCase.miamiInvoiceNumber = normalizedMiamiInvoiceNumber;
       }
@@ -174,6 +179,7 @@ const createSuitCases = async (req: Request, res: Response) => {
     } else {
       const payloadSuit: ISuitCases = {
         clientName,
+        clientCode,
         motherGuide: data.motherGuide,
         miamiInvoiceNumber: normalizedMiamiInvoiceNumber,
         dateArrive: data.dateArrive,
@@ -531,7 +537,11 @@ const updateSuitInvoices = async (req: Request, res: Response) => {
 
     const updatedPallet = await SuitcasesModel.findByIdAndUpdate(
       suitDoc._id,
-      { status: status, clientName: normalizeClientName(clientName) },
+      {
+        status: status,
+        clientName: normalizeClientName(clientName),
+        clientCode: await getClientCodeForName(clientName),
+      },
       { new: true },
     );
 
@@ -793,6 +803,73 @@ const deleteItemsSuitCases = async (req: Request, res: Response) => {
   }
 };
 
+const updateSuitcaseArrivalStatus = async (req: Request, res: Response) => {
+  try {
+    const { clientName, motherGuide, arrivalStatus } = req.body;
+    const validStatuses = ["IN_TRANSIT", "ARRIVED", "DELIVERED"];
+
+    if (!clientName || !motherGuide || !validStatuses.includes(arrivalStatus)) {
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid arrival status data",
+        mensaje: "Datos de llegada invalidos",
+        data: null,
+      });
+    }
+
+    const suitDoc = await findSuitcaseByClientAndGuide(clientName, motherGuide);
+
+    if (!suitDoc) {
+      return res.status(404).json({
+        ok: false,
+        message: "No found register",
+        mensaje: "No se encontraron registros",
+        data: null,
+      });
+    }
+
+    const update: Record<string, any> = { arrivalStatus };
+
+    if (arrivalStatus === "ARRIVED") {
+      update.arrivedAt = new Date();
+    }
+
+    if (arrivalStatus === "DELIVERED") {
+      update.deliveredAt = new Date();
+      update.arrivedAt = suitDoc.arrivedAt || new Date();
+    }
+
+    const updatedSuitcase = await SuitcasesModel.findByIdAndUpdate(
+      suitDoc._id,
+      update,
+      { new: true },
+    );
+
+    if (!updatedSuitcase) {
+      return res.status(404).json({
+        ok: false,
+        message: "No found register",
+        mensaje: "No se encontraron registros",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Arrival status updated",
+      mensaje: "Estado de llegada actualizado",
+      data: serializeSuitcase(updatedSuitcase),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL SERVER",
+      mensaje: "ERROR INTERNO DEL SERVIDOR",
+      data: null,
+    });
+  }
+};
+
 export {
   createSuitCases,
   getSuitCasesByMotherGuide,
@@ -803,4 +880,5 @@ export {
   getTotalSuits,
   updateSuitInvoices,
   deleteItemsSuitCases,
+  updateSuitcaseArrivalStatus,
 };

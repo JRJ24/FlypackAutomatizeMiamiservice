@@ -140,6 +140,24 @@ const PalletsMainSchema = new Schema<IPalletsMain>(
       required: false,
       index: true,
     },
+    clientCode: {
+      type: String,
+      required: false,
+      index: true,
+    },
+    arrivalStatus: {
+      type: String,
+      enum: ["IN_TRANSIT", "ARRIVED", "DELIVERED"],
+      default: "IN_TRANSIT",
+    },
+    arrivedAt: {
+      type: Date,
+      required: false,
+    },
+    deliveredAt: {
+      type: Date,
+      required: false,
+    },
     pallet: {
       type: [PalletSingleSchema],
       required: true,

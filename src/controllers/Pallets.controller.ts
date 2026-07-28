@@ -12,6 +12,7 @@ import InventoryModel from "../models/Inventory.model";
 import InventoryMovementModel from "../models/InventoryMovement.model";
 import { normalizeMiamiInvoiceNumber } from "../helpers/miamiInvoiceNumber";
 import { normalizeClientName, withDecryptedClientFields } from "../helpers/clientName";
+import { getClientCodeForName } from "../helpers/clientIdentity";
 import { findInventoryItemForClient } from "../helpers/inventoryLink";
 
 const serializePallet = (pallet: any) => withDecryptedClientFields(pallet);
@@ -70,6 +71,10 @@ const getPallets = async (req: Request, res: Response) => {
           date: { $first: "$date" },
           motherGuide: { $first: "$motherGuide" },
           miamiInvoiceNumber: { $first: "$miamiInvoiceNumber" },
+          clientCode: { $first: "$clientCode" },
+          arrivalStatus: { $first: "$arrivalStatus" },
+          arrivedAt: { $first: "$arrivedAt" },
+          deliveredAt: { $first: "$deliveredAt" },
           status: { $first: "$status" },
 
           totalPalletsCount: { $sum: 1 },
@@ -174,6 +179,10 @@ const getPalletsByMotherGuide = async (req: Request, res: Response) => {
           date: { $first: "$date" },
           motherGuide: { $first: "$motherGuide" },
           miamiInvoiceNumber: { $first: "$miamiInvoiceNumber" },
+          clientCode: { $first: "$clientCode" },
+          arrivalStatus: { $first: "$arrivalStatus" },
+          arrivedAt: { $first: "$arrivedAt" },
+          deliveredAt: { $first: "$deliveredAt" },
           status: { $first: "$status" },
 
           totalPalletsCount: { $sum: 1 },
@@ -369,6 +378,7 @@ const createPallets = async (req: Request, res: Response) => {
 
     const data: IPalletNew = req.body;
     const clientName = normalizeClientName(data?.clientName);
+    const clientCode = await getClientCodeForName(clientName);
     const normalizedMiamiInvoiceNumber = normalizeMiamiInvoiceNumber(
       data.miamiInvoiceNumber,
     );
@@ -557,6 +567,7 @@ const createPallets = async (req: Request, res: Response) => {
           {
             $set: {
               clientName,
+              ...(clientCode ? { clientCode } : {}),
               ...(normalizedMiamiInvoiceNumber
                 ? { miamiInvoiceNumber: normalizedMiamiInvoiceNumber }
                 : {}),
@@ -571,6 +582,7 @@ const createPallets = async (req: Request, res: Response) => {
               date: data.date,
               motherGuide: generatedMotherGuide,
               clientName,
+              clientCode,
               miamiInvoiceNumber: normalizedMiamiInvoiceNumber,
               isActive: true,
               isDelete: false,
@@ -682,7 +694,11 @@ const updatePalletsInvoices = async (req: Request, res: Response) => {
 
     const updatedPallet = await PalletsModel.findByIdAndUpdate(
       palletDoc._id,
-      { status: status, clientName: normalizeClientName(clientName) },
+      {
+        status: status,
+        clientName: normalizeClientName(clientName),
+        clientCode: await getClientCodeForName(clientName),
+      },
       { new: true },
     );
 
@@ -991,6 +1007,74 @@ const updateGuide = async (req: Request, res: Response) => {
     });
   }
 };
+
+const updatePalletArrivalStatus = async (req: Request, res: Response) => {
+  try {
+    const { clientName, motherGuide, arrivalStatus } = req.body;
+    const validStatuses = ["IN_TRANSIT", "ARRIVED", "DELIVERED"];
+
+    if (!clientName || !motherGuide || !validStatuses.includes(arrivalStatus)) {
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid arrival status data",
+        mensaje: "Datos de llegada invalidos",
+        data: null,
+      });
+    }
+
+    const palletDoc = await findPalletByClientAndGuide(clientName, motherGuide);
+
+    if (!palletDoc) {
+      return res.status(404).json({
+        ok: false,
+        message: "No found register",
+        mensaje: "No se encontraron registros",
+        data: null,
+      });
+    }
+
+    const update: Record<string, any> = { arrivalStatus };
+
+    if (arrivalStatus === "ARRIVED") {
+      update.arrivedAt = new Date();
+    }
+
+    if (arrivalStatus === "DELIVERED") {
+      update.deliveredAt = new Date();
+      update.arrivedAt = palletDoc.arrivedAt || new Date();
+    }
+
+    const updatedPallet = await PalletsModel.findByIdAndUpdate(
+      palletDoc._id,
+      update,
+      { new: true },
+    );
+
+    if (!updatedPallet) {
+      return res.status(404).json({
+        ok: false,
+        message: "No found register",
+        mensaje: "No se encontraron registros",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Arrival status updated",
+      mensaje: "Estado de llegada actualizado",
+      data: serializePallet(updatedPallet),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "Error internal server",
+      mensaje: "Error interno del servidor",
+      data: null,
+    });
+  }
+};
+
 export {
   getPallets,
   createPallets,
@@ -1002,4 +1086,5 @@ export {
   getPalletsBillings,
   deleteItemsPallets,
   updateGuide,
+  updatePalletArrivalStatus,
 };
