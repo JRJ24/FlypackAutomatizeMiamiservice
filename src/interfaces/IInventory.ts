@@ -4,5 +4,6 @@ export interface IInventoryTV {
   model: string;
   quantity: number;
   client: string;
+  lastMiamiInvoiceNumber?: string;
   isDisabled: boolean;
 }

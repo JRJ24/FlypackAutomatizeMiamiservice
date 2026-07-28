@@ -2,6 +2,7 @@ export interface IPalletsMain {
   clientName: string;
   date: string;
   motherGuide: string;
+  miamiInvoiceNumber?: string;
   pallet: IPalletSingle[];
   status: string;
   isDelete: boolean;
@@ -49,6 +50,7 @@ export interface IPalletNew {
   clientName: string;
   date: string;
   motherGuide: string;
+  miamiInvoiceNumber?: string;
   pallet: {
     palletDescription: string;
     pallets: {

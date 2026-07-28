@@ -11,7 +11,8 @@ RUN pnpm install --frozen-lockfile
 
 FROM node:20-alpine AS runner
 WORKDIR /app
-ENV NODE_ENV=PROD
+ENV NODE_ENV=production
+ENV PORT=3000
 
 RUN npm install -g pnpm
 

@@ -5,12 +5,16 @@ import AccountsReceivableModel from "./../models/Finanzes/AccountsReceivable.mod
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import DebitModel from "./../models/Finanzes/Debit.model";
+import { normalizeClientName, withDecryptedClientFields } from "../helpers/clientName";
+
+const serializeFinance = (finance: any) => withDecryptedClientFields(finance);
 
 const managementAccounts = async (req: Request, res: Response) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
     const { ...data } = req.body;
+    const clientName = normalizeClientName(data.clientName);
 
     if (!data) {
       return res.status(400).json({
@@ -43,7 +47,7 @@ const managementAccounts = async (req: Request, res: Response) => {
     );
 
     await AccountsCXCModel.findOneAndUpdate(
-      { clientName: data.clientName },
+      { clientName },
       { $inc: { totalAmount: -data.amount } },
       { upsert: true, session  },
     );
@@ -53,7 +57,7 @@ const managementAccounts = async (req: Request, res: Response) => {
       bankAccountName: data.bankAccountName,
       date: new Date(),
       amount: data.amount,
-      reason: `Customer payment ${data.clientName} on the date of ${new Date().toLocaleDateString()}`,
+      reason: `Customer payment ${clientName} on the date of ${new Date().toLocaleDateString()}`,
       status: data.status,
       isActive: true,
     };
@@ -89,6 +93,7 @@ const managementAccounts = async (req: Request, res: Response) => {
 const createAccounts = async (req: Request, res: Response) => {
   try {
     const { clientName, motherGuide, amount, ...rest } = req.body;
+    const normalizedClientName = normalizeClientName(clientName);
 
     if (!clientName || amount === undefined) {
       return res.status(400).json({
@@ -99,14 +104,14 @@ const createAccounts = async (req: Request, res: Response) => {
     }
 
     const newReceivable = await AccountsReceivableModel.create({
-      clientName,
+      clientName: normalizedClientName,
       motherGuide,
       amount,
       ...rest,
     });
 
     const updatedTotal = await AccountsCXCModel.findOneAndUpdate(
-      { clientName: clientName },
+      { clientName: normalizedClientName },
       {
         $inc: { totalAmount: amount },
         $set: { lastUpdate: new Date() },
@@ -122,7 +127,7 @@ const createAccounts = async (req: Request, res: Response) => {
       ok: true,
       message: "Account created and total successfully updated",
       mensaje: "Cuenta creada y total actualizado correctamente",
-      data: newReceivable,
+      data: serializeFinance(newReceivable),
     });
   } catch (error) {
     console.error(error);
@@ -135,6 +140,12 @@ const createAccounts = async (req: Request, res: Response) => {
 };
 const deleteAccounts = async (req: Request, res: Response) => {
   try {
+    return res.status(501).json({
+      ok: false,
+      message: "Not implemented",
+      mensaje: "No implementado",
+      data: null,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -191,7 +202,7 @@ const getAccountsCXC = async (req: Request, res: Response) => {
       ok: true,
       message: "data",
       mensaje: "data",
-      data: getCXC,
+      data: getCXC.map(serializeFinance),
     });
   } catch (error) {
     return res.status(500).json({

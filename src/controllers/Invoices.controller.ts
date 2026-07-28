@@ -1,5 +1,57 @@
 import { Request, Response } from "express";
 import InvoicesModel from "../models/Invoices.model";
+import { normalizeClientName, withDecryptedClientFields } from "../helpers/clientName";
+
+const serializeInvoice = (invoice: any) => withDecryptedClientFields(invoice);
+
+const includesText = (value: unknown, search: string) =>
+  String(value || "").toLowerCase().includes(search.toLowerCase());
+
+const getInvoices = async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.max(Number(req.query.limit) || 10, 1);
+    const search = String(req.query.search || "").trim();
+    const skip = (page - 1) * limit;
+
+    const invoices = (await InvoicesModel.find().sort({ date: -1, _id: -1 }))
+      .map(serializeInvoice)
+      .filter((invoice) => {
+        if (!search) return true;
+
+        return (
+          includesText(invoice.client, search) ||
+          includesText(invoice.motherGuide, search) ||
+          includesText(invoice.invoiceNumber, search) ||
+          includesText(invoice.type, search) ||
+          includesText(invoice.status, search)
+        );
+      });
+
+    const totalItems = invoices.length;
+    const totalPages = Math.ceil(totalItems / limit) || 1;
+
+    return res.status(200).json({
+      ok: true,
+      message: "Invoices",
+      mensaje: "Facturas",
+      data: invoices.slice(skip, skip + limit),
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalItems,
+        itemsPerPage: limit,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL SERVER",
+      mensaje: "ERROR INTERNO DEL SERVIDOR",
+      data: null,
+    });
+  }
+};
 
 const createInvoices = async (req: Request, res: Response) => {
   try {
@@ -12,6 +64,10 @@ const createInvoices = async (req: Request, res: Response) => {
         mensaje: "No data",
         data: null,
       });
+    }
+
+    if (data.client) {
+      data.client = normalizeClientName(data.client);
     }
 
 
@@ -32,7 +88,7 @@ const createInvoices = async (req: Request, res: Response) => {
       ok: true,
       message: "Invoices",
       mensaje: "Invoices",
-      data: invoice,
+      data: serializeInvoice(invoice),
     });
   } catch (error) {
     console.log(error);
@@ -73,7 +129,7 @@ const getInvoicesByMotherGuide = async (req: Request, res: Response) => {
       ok: true,
       message: "Invoices",
       mensaje: "Invoicess",
-      data: invoicesMG,
+      data: invoicesMG.map(serializeInvoice),
     });
   } catch (error) {
     return res.status(500).json({
@@ -137,7 +193,7 @@ const searchInvoices = async (req: Request, res: Response) => {
       ok: true,
       message: "Invoices found",
       mensaje: "Facturas encontradas",
-      data: invoices,
+      data: invoices.map(serializeInvoice),
     });
   } catch (error) {
     console.error(error);
@@ -167,10 +223,10 @@ const getInvoicesByMotherGuideAndClient = async (
       });
     }
 
-    const invoicesMGCL = await InvoicesModel.find({
+    const normalizedClient = normalizeClientName(client);
+    const invoicesMGCL = (await InvoicesModel.find({
       motherGuide: motherGuide,
-      client: client,
-    });
+    })).filter((invoice) => normalizeClientName(invoice.client) === normalizedClient);
 
     if (!invoicesMGCL) {
       return res.status(400).json({
@@ -185,7 +241,7 @@ const getInvoicesByMotherGuideAndClient = async (
       ok: true,
       message: "Invoices",
       mensaje: "Invoices",
-      data: invoicesMGCL,
+      data: invoicesMGCL.map(serializeInvoice),
     });
   } catch (error) {
     return res.status(500).json({
@@ -258,7 +314,7 @@ const getInvoicesForClient = async (req: Request, res: Response) => {
       ok: true,
       message: "results",
       mensaje: "resultado",
-      data: results,
+      data: results.map(serializeInvoice),
     });
   } catch (error) {
     return res.status(500).json({
@@ -277,6 +333,7 @@ const getInvoicesForClient = async (req: Request, res: Response) => {
 
 export {
   createInvoices,
+  getInvoices,
   getInvoicesByMotherGuide,
   getInvoicesByMotherGuideAndClient,
   getInvoicesForClient,

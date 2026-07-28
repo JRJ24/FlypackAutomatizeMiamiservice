@@ -130,6 +130,12 @@ const getProcessNoLimit = async (req: Request, res: Response) => {
 
 const updateProcess = async (req: Request, res: Response) => {
   try {
+    return res.status(501).json({
+      ok: false,
+      mensaje: "No implementado",
+      message: "Not implemented",
+      data: null,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,

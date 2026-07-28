@@ -9,6 +9,35 @@ import PriceModel from "./../models/PriceModel";
 import MaintenanceCostModel from "./../models/MaintenanceCost.model";
 import { CalcSuitCases } from "./../helpers/calcSuitCases";
 import InventoryModel from "./../models/Inventory.model";
+import InventoryMovementModel from "../models/InventoryMovement.model";
+import { normalizeMiamiInvoiceNumber } from "../helpers/miamiInvoiceNumber";
+import { normalizeClientName, withDecryptedClientFields } from "../helpers/clientName";
+import { findInventoryItemForClient } from "../helpers/inventoryLink";
+
+const serializeSuitcase = (suitcase: any) => withDecryptedClientFields(suitcase);
+
+const includesText = (value: unknown, search: string) =>
+  String(value || "").toLowerCase().includes(search.toLowerCase());
+
+const matchesMiamiRef = (value: unknown, search: string) => {
+  if (!search) return true;
+
+  const normalizedSearch = normalizeMiamiInvoiceNumber(search) || search;
+
+  return includesText(value, normalizedSearch) || includesText(value, search);
+};
+
+const findSuitcaseByClientAndGuide = async (clientName: string, motherGuide: string) => {
+  const normalizedClient = normalizeClientName(clientName);
+  const candidates = await SuitcasesModel.find({
+    motherGuide,
+    isDelete: false,
+  }).lean();
+
+  return candidates.find(
+    (suitcase) => normalizeClientName(suitcase.clientName) === normalizedClient,
+  ) || null;
+};
 
 const createSuitCases = async (req: Request, res: Response) => {
   const session = await SuitcasesModel.startSession();
@@ -17,8 +46,12 @@ const createSuitCases = async (req: Request, res: Response) => {
     session.startTransaction();
 
     const data: ISuitCasesClientSend = req.body;
+    const clientName = normalizeClientName(data?.clientName);
+    const normalizedMiamiInvoiceNumber = normalizeMiamiInvoiceNumber(
+      data.miamiInvoiceNumber,
+    );
 
-    if (!data?.items || !Array.isArray(data.items) || data.items.length === 0) {
+    if (!clientName || !data?.items || !Array.isArray(data.items) || data.items.length === 0) {
       await session.abortTransaction();
       return res.status(400).json({
         ok: false,
@@ -62,7 +95,7 @@ const createSuitCases = async (req: Request, res: Response) => {
         });
       }
 
-      const isSpecial = data.clientName === "Daniel";
+      const isSpecial = clientName === "Daniel";
 
       const priceBrand = await PriceModel.findOne({
         model: item.brandModel,
@@ -124,17 +157,25 @@ const createSuitCases = async (req: Request, res: Response) => {
 
     let suitCases;
 
-    const existingSuitCase = await SuitcasesModel.findOne({
+    const existingSuitCase = (await SuitcasesModel.find({
       motherGuide: data.motherGuide,
-    }).session(session);
+      isDelete: false,
+    }).session(session)).find(
+      (suitcase) => normalizeClientName(suitcase.clientName) === clientName,
+    );
 
     if (existingSuitCase) {
+      existingSuitCase.clientName = clientName;
+      if (normalizedMiamiInvoiceNumber) {
+        existingSuitCase.miamiInvoiceNumber = normalizedMiamiInvoiceNumber;
+      }
       existingSuitCase.suitCases.push(...processedSuitCases);
       suitCases = await existingSuitCase.save({ session });
     } else {
       const payloadSuit: ISuitCases = {
-        clientName: data.clientName,
+        clientName,
         motherGuide: data.motherGuide,
+        miamiInvoiceNumber: normalizedMiamiInvoiceNumber,
         dateArrive: data.dateArrive,
         suitCases: processedSuitCases,
         status: "Not invoiced",
@@ -149,16 +190,27 @@ const createSuitCases = async (req: Request, res: Response) => {
     for (const item of data.items) {
       const quantity = Number(item.quantity);
 
-      const filter = {
+      const inventoryItem = await findInventoryItemForClient({
+        clientName,
         brandTV: item.brandModel,
-        inchs: Number(item.inches),
+        inchs: item.inches,
         model: item.modelDescription,
-        client: data.clientName,
-        quantity: { $gte: quantity },
-      } as any;
+        minQuantity: quantity,
+        session,
+      });
 
-      const inventoryUpdated = await InventoryModel.findOneAndUpdate(
-        filter,
+      if (!inventoryItem) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          ok: false,
+          message: "Insufficient inventory or inventory not found",
+          mensaje: "Inventario insuficiente o no encontrado",
+          data: item,
+        });
+      }
+
+      const inventoryUpdated = await InventoryModel.findByIdAndUpdate(
+        inventoryItem._id,
         {
           $inc: { quantity: -quantity },
         },
@@ -177,6 +229,23 @@ const createSuitCases = async (req: Request, res: Response) => {
           data: item,
         });
       }
+
+      await InventoryMovementModel.create(
+        [
+          {
+            inventoryId: inventoryUpdated._id,
+            type: "EXIT",
+            quantity,
+            previousQuantity: Number(inventoryUpdated.quantity) + quantity,
+            resultingQuantity: Number(inventoryUpdated.quantity),
+            miamiInvoiceNumber: normalizedMiamiInvoiceNumber,
+            referenceType: "SUITCASE",
+            referenceId: String(suitCases._id),
+            createdBy: (req as any).user?._id,
+          },
+        ],
+        { session },
+      );
     }
 
     await session.commitTransaction();
@@ -185,7 +254,7 @@ const createSuitCases = async (req: Request, res: Response) => {
       ok: true,
       message: existingSuitCase ? "Updated successfully" : "Saved successfully",
       mensaje: existingSuitCase ? "Actualizado correctamente" : "Guardado correctamente",
-      data: suitCases,
+      data: serializeSuitcase(suitCases),
     });
   } catch (error) {
     await session.abortTransaction();
@@ -204,24 +273,62 @@ const createSuitCases = async (req: Request, res: Response) => {
 
 const getSuitCases = async (req: Request, res: Response) => {
   try {
-    const getSuitCases = await SuitcasesModel.find({
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.max(Number(req.query.limit) || 20, 1);
+    const skip = (page - 1) * limit;
+    const clientName = normalizeClientName(req.query.clientName || req.query.client);
+    const motherGuide = String(req.query.motherGuide || "").trim();
+    const miamiInvoiceNumber = String(req.query.miamiInvoiceNumber || req.query.ref || "").trim();
+
+    const getSuitCases = (await SuitcasesModel.find({
       isDelete: false,
-    }).limit(20);
+    }).sort({ dateArrive: -1, _id: -1 }))
+      .map(serializeSuitcase)
+      .filter((suitcase) => {
+        if (clientName && !includesText(normalizeClientName(suitcase.clientName), clientName)) {
+          return false;
+        }
+
+        if (motherGuide && !includesText(suitcase.motherGuide, motherGuide)) {
+          return false;
+        }
+
+        if (!matchesMiamiRef(suitcase.miamiInvoiceNumber, miamiInvoiceNumber)) {
+          return false;
+        }
+
+        return true;
+      });
 
     if (!getSuitCases || getSuitCases.length === 0) {
-      return res.status(400).json({
-        ok: false,
-        message: "No Suit with this mother Guide",
-        mensaje: "No valija con ese numero de guia",
-        data: null,
+      return res.status(200).json({
+        ok: true,
+        message: "No suitcases found",
+        mensaje: "No se encontraron maletas",
+        data: [],
+        pagination: {
+          currentPage: page,
+          totalPages: 1,
+          totalItems: 0,
+          itemsPerPage: limit,
+        },
       });
     }
+
+    const totalItems = getSuitCases.length;
+    const totalPages = Math.ceil(totalItems / limit) || 1;
 
     return res.status(200).json({
       ok: true,
       message: "Sucess",
       mensaje: "Sucess",
-      data: getSuitCases,
+      data: getSuitCases.slice(skip, skip + limit),
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalItems,
+        itemsPerPage: limit,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -264,7 +371,7 @@ const getSuitCasesByMotherGuide = async (req: Request, res: Response) => {
       ok: true,
       message: "Sucess",
       mensaje: "Sucess",
-      data: getSuitCases,
+      data: getSuitCases.map(serializeSuitcase),
     });
   } catch (error) {
     return res.status(500).json({
@@ -289,10 +396,7 @@ const getClientNameAndMotherGuide = async (req: Request, res: Response) => {
       });
     }
 
-    const getSuitCases = await SuitcasesModel.findOne({
-      clientName: clientName,
-      motherGuide: motherGuide,
-    }).lean();
+    const getSuitCases = await findSuitcaseByClientAndGuide(String(clientName), String(motherGuide));
 
     if (!getSuitCases) {
       return res.status(404).json({
@@ -307,7 +411,7 @@ const getClientNameAndMotherGuide = async (req: Request, res: Response) => {
       ok: true,
       message: "Sucess",
       mensaje: "Sucess",
-      data: getSuitCases,
+      data: serializeSuitcase(getSuitCases),
     });
   } catch (error) {
     return res.status(500).json({
@@ -331,12 +435,21 @@ const getTotalSuits = async (req: Request, res: Response) => {
       });
     }
 
+    const suitDoc = await findSuitcaseByClientAndGuide(String(clientName), String(motherGuide));
+
+    if (!suitDoc) {
+      return res.status(404).json({
+        ok: false,
+        message: "No se encontraron registros",
+        data: null,
+      });
+    }
+
     const result = await SuitcasesModel.aggregate([
       // 1. Filtramos por el cliente y la guía
       {
         $match: {
-          clientName: clientName,
-          motherGuide: motherGuide,
+          _id: suitDoc._id,
         },
       },
       // 2. Sumamos los campos dentro del array suitCases
@@ -376,6 +489,12 @@ const getTotalSuits = async (req: Request, res: Response) => {
 
 const updateSuitCases = async (req: Request, res: Response) => {
   try {
+    return res.status(501).json({
+      ok: false,
+      message: "Not implemented",
+      mensaje: "No implementado",
+      data: null,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -399,9 +518,20 @@ const updateSuitInvoices = async (req: Request, res: Response) => {
       });
     }
 
-    const updatedPallet = await SuitcasesModel.findOneAndUpdate(
-      { motherGuide: motherGuide, clientName: clientName },
-      { status: status },
+    const suitDoc = await findSuitcaseByClientAndGuide(clientName, motherGuide);
+
+    if (!suitDoc) {
+      return res.status(404).json({
+        ok: false,
+        message: "No found register",
+        mensaje: "No se encontraron registros",
+        data: null,
+      });
+    }
+
+    const updatedPallet = await SuitcasesModel.findByIdAndUpdate(
+      suitDoc._id,
+      { status: status, clientName: normalizeClientName(clientName) },
       { new: true },
     );
 
@@ -418,7 +548,7 @@ const updateSuitInvoices = async (req: Request, res: Response) => {
       ok: true,
       message: "Updated",
       mensaje: "Actualizado correctamente",
-      data: updatedPallet,
+      data: serializeSuitcase(updatedPallet),
     });
   } catch (error) {
     return res.status(500).json({
@@ -431,10 +561,15 @@ const updateSuitInvoices = async (req: Request, res: Response) => {
 };
 
 const deleteSuitCases = async (req: Request, res: Response) => {
+  const session = await SuitcasesModel.startSession();
+
   try {
+    session.startTransaction();
+
     const { _id } = req.params;
 
     if (!_id) {
+      await session.abortTransaction();
       return res.status(400).json({
         ok: false,
         message: "No Data",
@@ -443,15 +578,10 @@ const deleteSuitCases = async (req: Request, res: Response) => {
       });
     }
 
-    const deleteSuit = await SuitcasesModel.findByIdAndUpdate(
-      _id,
-      {
-        isDelete: true,
-      },
-      { new: true },
-    );
+    const suitDoc = await SuitcasesModel.findById(_id).session(session);
 
-    if (!deleteSuit) {
+    if (!suitDoc || suitDoc.isDelete) {
+      await session.abortTransaction();
       return res.status(404).json({
         ok: false,
         message: "No Data",
@@ -460,19 +590,102 @@ const deleteSuitCases = async (req: Request, res: Response) => {
       });
     }
 
+    const clientName = normalizeClientName(suitDoc.clientName);
+    const restoreMovements: any[] = [];
+
+    for (const item of suitDoc.suitCases || []) {
+      const quantity = Number(item.quantity);
+
+      if (!Number.isFinite(quantity) || quantity <= 0) continue;
+
+      const inventoryItem = await findInventoryItemForClient({
+        clientName,
+        brandTV: item.brandModel,
+        model: item.modelDescription,
+        inchs: item.inches,
+        session,
+      });
+
+      if (!inventoryItem) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          ok: false,
+          message: "No restore inventory",
+          mensaje: "No inventario restaurado",
+          data: item,
+        });
+      }
+
+      const restoredInventory = await InventoryModel.findByIdAndUpdate(
+        inventoryItem._id,
+        { $inc: { quantity } },
+        { new: true, session },
+      );
+
+      if (!restoredInventory) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          ok: false,
+          message: "No restore inventory",
+          mensaje: "No inventario restaurado",
+          data: item,
+        });
+      }
+
+      restoreMovements.push({
+        inventoryId: restoredInventory._id,
+        type: "ADJUSTMENT",
+        quantity,
+        previousQuantity: Number(restoredInventory.quantity) - quantity,
+        resultingQuantity: Number(restoredInventory.quantity),
+        miamiInvoiceNumber: suitDoc.miamiInvoiceNumber,
+        referenceType: "SUITCASE_DELETE",
+        referenceId: String(suitDoc._id),
+        createdBy: (req as any).user?._id,
+      });
+    }
+
+    const deleteSuit = await SuitcasesModel.findByIdAndUpdate(
+      _id,
+      {
+        isDelete: true,
+        clientName,
+      },
+      { new: true, session },
+    );
+
+    if (!deleteSuit) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        ok: false,
+        message: "No Data",
+        mensaje: "No data",
+        data: null,
+      });
+    }
+
+    if (restoreMovements.length > 0) {
+      await InventoryMovementModel.create(restoreMovements, { session });
+    }
+
+    await session.commitTransaction();
+
     return res.status(200).json({
       ok: true,
       message: "The suit is delete",
       mensaje: "La valija fue eliminada",
-      data: deleteSuit,
+      data: serializeSuitcase(deleteSuit),
     });
   } catch (error) {
+    await session.abortTransaction();
     return res.status(500).json({
       ok: false,
       message: "ERROR INTERNAL SERVER",
       mensaje: "ERROR INTERNO DEL SERVIDOR",
       data: null,
     });
+  } finally {
+    session.endSession();
   }
 };
 
@@ -523,15 +736,20 @@ const deleteItemsSuitCases = async (req: Request, res: Response) => {
         });
       }
 
-      const restoreInv = await InventoryModel.findOneAndUpdate(
-        {
-          brandTV: itemDeleted.brandModel,
-          model: itemDeleted.modelDescription,
-          inchs: itemDeleted.inches,
-        },
-        { $inc: { quantity: itemDeleted.quantity } },
-        { new: true },
-      );
+      const inventoryItem = await findInventoryItemForClient({
+        clientName: normalizeClientName(docSuitcases.clientName),
+        brandTV: itemDeleted.brandModel,
+        model: itemDeleted.modelDescription,
+        inchs: itemDeleted.inches,
+      });
+
+      const restoreInv = inventoryItem
+        ? await InventoryModel.findByIdAndUpdate(
+            inventoryItem._id,
+            { $inc: { quantity: itemDeleted.quantity } },
+            { new: true },
+          )
+        : null;
 
       if (!restoreInv) {
         return res.status(400).json({
@@ -545,6 +763,18 @@ const deleteItemsSuitCases = async (req: Request, res: Response) => {
       docSuitcases.suitCases.splice(indexItem, 1);
 
       await docSuitcases.save();
+
+      await InventoryMovementModel.create({
+        inventoryId: restoreInv._id,
+        type: "ADJUSTMENT",
+        quantity: itemDeleted.quantity,
+        previousQuantity: Number(restoreInv.quantity) - Number(itemDeleted.quantity),
+        resultingQuantity: Number(restoreInv.quantity),
+        miamiInvoiceNumber: docSuitcases.miamiInvoiceNumber,
+        referenceType: "SUITCASE_ITEM_DELETE",
+        referenceId: String(docSuitcases._id),
+        createdBy: (req as any).user?._id,
+      });
 
       return res.status(200).json({
         ok: true,

@@ -1,6 +1,6 @@
 import { model, Schema } from "mongoose";
 import { IUserModel } from "../interfaces/IUsersmodel";
-import { decrypt, encrypt } from "../helpers/crypto";
+import { encrypt, safeDecrypt } from "../helpers/crypto";
 import crypto from "crypto";
 
 const UsersSchema = new Schema<IUserModel>(
@@ -65,11 +65,11 @@ const UsersSchema = new Schema<IUserModel>(
 
 UsersSchema.pre("save", function () {
   if (this.isModified("name")) {
-    this.name = encrypt(this.name);
+    this.name = encrypt(safeDecrypt(this.name));
   }
 
   if (this.isModified("email")) {
-    const plainEmail = this.email;
+    const plainEmail = safeDecrypt(this.email).trim().toLowerCase();
     this.emailIndex = crypto
       .createHash("sha256")
       .update(plainEmail)
@@ -83,11 +83,11 @@ UsersSchema.pre("findOneAndUpdate", function () {
   const update = this.getUpdate() as any;
 
   if (update.name) {
-    update.name = encrypt(update.name);
+    update.name = encrypt(safeDecrypt(update.name));
   }
 
   if (update.email) {
-    const plainEmail = update.email;
+    const plainEmail = safeDecrypt(update.email).trim().toLowerCase();
     update.emailIndex = crypto
       .createHash("sha256")
       .update(plainEmail)
@@ -102,8 +102,8 @@ UsersSchema.pre("findOneAndUpdate", function () {
 
 UsersSchema.post("init", function (doc) {
   try {
-    if (doc.name) doc.name = decrypt(doc.name);
-    if (doc.email) doc.email = decrypt(doc.email);
+    if (doc.name) doc.name = safeDecrypt(doc.name);
+    if (doc.email) doc.email = safeDecrypt(doc.email);
   } catch (e) {
     console.warn("No se pudo desencriptar el documento:", doc._id);
   }

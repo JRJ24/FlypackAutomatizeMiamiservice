@@ -53,6 +53,11 @@ const SuitCasesSchema = new Schema<ISuitCases>({
     type: String,
     required: true,
   },
+  miamiInvoiceNumber: {
+    type: String,
+    required: false,
+    index: true,
+  },
   dateArrive: {
     type: String,
     required: true,

@@ -3,6 +3,7 @@ import * as authController from "./../controllers/Auth.controller";
 import express = require("express");
 import { validatJWT } from "../middlewares/token";
 import passport from "passport";
+import { config } from "../config/env";
 
 
 // import { validateFields } from "../middlewares/validate_fields";
@@ -21,7 +22,7 @@ authRouter.get(
 
 authRouter.get(
   "/google/callback",
-  passport.authenticate("google", { session: false, failureRedirect: "http://localhost:5173/login?error=auth_failed" }),
+  passport.authenticate("google", { session: false, failureRedirect: `${config.frontendUrl}/login?error=auth_failed` }),
   authController.loginGoogle 
 );
 
@@ -31,7 +32,13 @@ authRouter.get(
 //   authController.refresh
 // )
 
-authRouter.get("/logout", validatJWT, authController.logout);
+authRouter.get("/me", validatJWT, authController.me);
+
+authRouter.post("/refresh-token", authController.refreshToken);
+
+authRouter.post("/logout", authController.logout);
+
+authRouter.get("/logout", authController.logout);
 
 authRouter.post("/request-password-reset", authController.FORGOTPASSWORD);
 

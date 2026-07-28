@@ -6,9 +6,10 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "cross-env DEBUG=app nodemon --config nodemon.json src/App.ts",
-    "start": "node ./dist/App.js",
+    "start": "node ./dist/src/App.js",
     "build": "tsc && tsc-alias",
-    "clean": "rimraf ./dist && mkdir dist"
+    "clean": "rimraf ./dist && mkdir dist",
+    "db:seed": "ts-node src/database/seed.ts"
   },
   "keywords": [],
   "author": "",

@@ -9,12 +9,46 @@ import {
 } from "../interfaces/IPalletsmodel";
 import PriceModel from "../models/PriceModel";
 import InventoryModel from "../models/Inventory.model";
+import InventoryMovementModel from "../models/InventoryMovement.model";
+import { normalizeMiamiInvoiceNumber } from "../helpers/miamiInvoiceNumber";
+import { normalizeClientName, withDecryptedClientFields } from "../helpers/clientName";
+import { findInventoryItemForClient } from "../helpers/inventoryLink";
+
+const serializePallet = (pallet: any) => withDecryptedClientFields(pallet);
+
+const includesText = (value: unknown, search: string) =>
+  String(value || "").toLowerCase().includes(search.toLowerCase());
+
+const matchesMiamiRef = (value: unknown, search: string) => {
+  if (!search) return true;
+
+  const normalizedSearch = normalizeMiamiInvoiceNumber(search) || search;
+
+  return includesText(value, normalizedSearch) || includesText(value, search);
+};
+
+const findPalletByClientAndGuide = async (clientName: string, motherGuide: string) => {
+  const normalizedClient = normalizeClientName(clientName);
+  const candidates = await PalletsModel.find({
+    motherGuide,
+    isDelete: false,
+  }).lean();
+
+  return candidates.find(
+    (pallet) => normalizeClientName(pallet.clientName) === normalizedClient,
+  ) || null;
+};
 
 // No modified
 const getPallets = async (req: Request, res: Response) => {
   try {
-    const page = Number(req.query.page) || 1;
-    const limit = 10;
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.max(Number(req.query.limit) || 10, 1);
+    const clientName = normalizeClientName(req.query.clientName || req.query.client);
+    const motherGuide = String(req.query.motherGuide || "").trim();
+    const miamiInvoiceNumber = String(req.query.miamiInvoiceNumber || req.query.ref || "").trim();
+    const pending = req.query.pending;
+    const isPending = pending === "on" || pending === "true";
     const skip = (page - 1) * limit;
 
     const result = await PalletsModel.aggregate([
@@ -35,6 +69,7 @@ const getPallets = async (req: Request, res: Response) => {
           clientName: { $first: "$clientName" },
           date: { $first: "$date" },
           motherGuide: { $first: "$motherGuide" },
+          miamiInvoiceNumber: { $first: "$miamiInvoiceNumber" },
           status: { $first: "$status" },
 
           totalPalletsCount: { $sum: 1 },
@@ -46,25 +81,39 @@ const getPallets = async (req: Request, res: Response) => {
           date: -1,
         },
       },
-      {
-        $facet: {
-          data: [{ $skip: skip }, { $limit: limit }],
-          total: [{ $count: "count" }],
-        },
-      },
     ]);
 
-    const pallets = result[0]?.data || [];
-    const totalItems = result[0]?.total[0]?.count || 0;
-    const totalPages = Math.ceil(totalItems / limit);
+    const pallets = result
+      .map(serializePallet)
+      .filter((pallet) => {
+        if (clientName && !includesText(normalizeClientName(pallet.clientName), clientName)) {
+          return false;
+        }
+
+        if (motherGuide && !includesText(pallet.motherGuide, motherGuide)) {
+          return false;
+        }
+
+        if (!matchesMiamiRef(pallet.miamiInvoiceNumber, miamiInvoiceNumber)) {
+          return false;
+        }
+
+        if (isPending) {
+          return pallet.status === "Pending guidance" || String(pallet.motherGuide || "").startsWith("No Guide - ");
+        }
+
+        return true;
+      });
+    const totalItems = pallets.length;
+    const totalPages = Math.ceil(totalItems / limit) || 1;
 
     return res.status(200).json({
       ok: true,
       message: "Pallets found",
       mensaje: "Pallets encontrados",
-      data: pallets,
+      data: pallets.slice(skip, skip + limit),
       pagination: {
-        page,
+        currentPage: page,
         limit,
         totalItems,
         totalPages,
@@ -124,6 +173,7 @@ const getPalletsByMotherGuide = async (req: Request, res: Response) => {
           clientName: { $first: "$clientName" },
           date: { $first: "$date" },
           motherGuide: { $first: "$motherGuide" },
+          miamiInvoiceNumber: { $first: "$miamiInvoiceNumber" },
           status: { $first: "$status" },
 
           totalPalletsCount: { $sum: 1 },
@@ -147,7 +197,7 @@ const getPalletsByMotherGuide = async (req: Request, res: Response) => {
       ok: true,
       message: "Pallets by Mother Guide",
       mensaje: "Pallets con la guia madre",
-      data: pallets,
+      data: pallets.map(serializePallet),
     });
   } catch (error) {
     return res.status(500).json({
@@ -171,11 +221,7 @@ const getPalletsByClient = async (req: Request, res: Response) => {
       });
     }
 
-    const palletDoc = await PalletsModel.findOne({
-      clientName: clientName,
-      motherGuide: motherGuide,
-      isDelete: false,
-    }).lean();
+    const palletDoc = await findPalletByClientAndGuide(String(clientName), String(motherGuide));
 
     if (!palletDoc) {
       return res.status(404).json({
@@ -188,7 +234,7 @@ const getPalletsByClient = async (req: Request, res: Response) => {
     return res.status(200).json({
       ok: true,
       mensaje: "Datos obtenidos con éxito",
-      data: palletDoc,
+      data: serializePallet(palletDoc),
     });
   } catch (error) {
     console.error(error);
@@ -214,12 +260,21 @@ const getPalletsDataProcess = async (req: Request, res: Response) => {
 
     const maintenance = await MaintenanceCostModel.findOne();
     const rate = maintenance?.rate;
+    const palletDoc = await findPalletByClientAndGuide(String(clientName), String(motherGuide));
+
+    if (!palletDoc) {
+      return res.status(404).json({
+        ok: false,
+        message: "No found register",
+        mensaje: "No se encontraron registros",
+        data: null,
+      });
+    }
+
     const results = await PalletsModel.aggregate([
       {
         $match: {
-          clientName: clientName,
-          motherGuide: motherGuide,
-          isDelete: false,
+          _id: palletDoc._id,
         },
       },
       { $unwind: "$pallet" },
@@ -307,10 +362,19 @@ const getPalletsDataProcess = async (req: Request, res: Response) => {
 };
 
 const createPallets = async (req: Request, res: Response) => {
-  try {
-    const data: IPalletNew = req.body;
+  const session = await PalletsModel.startSession();
 
-    if (!data || !data.pallet) {
+  try {
+    session.startTransaction();
+
+    const data: IPalletNew = req.body;
+    const clientName = normalizeClientName(data?.clientName);
+    const normalizedMiamiInvoiceNumber = normalizeMiamiInvoiceNumber(
+      data.miamiInvoiceNumber,
+    );
+
+    if (!data || !data.pallet || !clientName) {
+      await session.abortTransaction();
       return res.status(400).json({
         ok: false,
         message: "No data",
@@ -320,7 +384,17 @@ const createPallets = async (req: Request, res: Response) => {
     }
 
     const { pallets, calcPallet } = data.pallet;
-    const weightLB = calcPallet.weightLB;
+    const weightLB = Number(calcPallet.weightLB);
+
+    if (!Array.isArray(pallets) || pallets.length === 0 || !Number.isFinite(weightLB) || weightLB <= 0) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid packing list data",
+        mensaje: "Datos de packing list invalidos",
+        data: null,
+      });
+    }
 
     const motherGuideValue = data.motherGuide?.trim();
     const isMotherGuideEmpty = !motherGuideValue;
@@ -328,47 +402,86 @@ const createPallets = async (req: Request, res: Response) => {
     // 1. Buscar precios unitarios en la BD y calcular totales por ítem
     let globalTotalPrice = 0;
     const enrichedPallets: IPalletsDetails[] = [];
+    const inventoryExits: {
+      inventoryId: any;
+      quantity: number;
+      previousQuantity: number;
+      resultingQuantity: number;
+    }[] = [];
 
-    const isSpecial: boolean = data.clientName === "Daniel" ? true : false;
+    const isSpecial: boolean = clientName === "Daniel" ? true : false;
 
     for (const item of pallets) {
+      const quantityUnit = Number(item.quantityUnit);
+
+      if (
+        !item.model ||
+        !item.inchs ||
+        !item.descriptionModel ||
+        !Number.isFinite(quantityUnit) ||
+        quantityUnit <= 0
+      ) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          ok: false,
+          message: "Invalid inventory item",
+          mensaje: "Item de inventario invalido",
+          data: item,
+        });
+      }
+
       // Reemplaza "ProductsModel" con el modelo real donde guardas los precios
       const pricesInfo = await PriceModel.findOne({
         model: item.model,
         inches: item.inchs,
         isSpecial: isSpecial,
-      });
-
-      const inventoryInfo = await InventoryModel.findOne({
-        brandTV: item.model,
-        inchs: item.inchs,
-        model: item.descriptionModel,
-        client: data.clientName,
-        isDisabled: false,
-      });
+      }).session(session);
 
       // Si no encuentra el producto, asignamos 0 o el valor por defecto que prefieras
       const unitPrice = pricesInfo ? pricesInfo.unitPrice : 0;
-      const totalUnitPrice = unitPrice * item.quantityUnit;
+      const totalUnitPrice = unitPrice * quantityUnit;
 
-      if (inventoryInfo?.quantity && inventoryInfo.quantity !== undefined) {
-        const restInventoryStock = inventoryInfo?.quantity - item.quantityUnit;
+      const inventoryItem = await findInventoryItemForClient({
+        clientName,
+        brandTV: item.model,
+        inchs: item.inchs,
+        model: item.descriptionModel,
+        minQuantity: quantityUnit,
+        session,
+      });
 
-        const UpdateQtyInventory = await InventoryModel.findByIdAndUpdate(
-          inventoryInfo._id,
-          { quantity: restInventoryStock },
-          { new: true },
-        );
-
-        if (!UpdateQtyInventory) {
-          return res.status(400).json({
-            ok: false,
-            message: "The inventory has not decreased",
-            mensaje: "No ha disminuido el inventario",
-            data: null,
-          });
-        }
+      if (!inventoryItem) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          ok: false,
+          message: "Insufficient inventory or inventory not found",
+          mensaje: "Inventario insuficiente o no encontrado",
+          data: item,
+        });
       }
+
+      const UpdateQtyInventory = await InventoryModel.findByIdAndUpdate(
+        inventoryItem._id,
+        { $inc: { quantity: -quantityUnit } },
+        { new: true, session },
+      );
+
+      if (!UpdateQtyInventory) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          ok: false,
+          message: "Insufficient inventory or inventory not found",
+          mensaje: "Inventario insuficiente o no encontrado",
+          data: item,
+        });
+      }
+
+      inventoryExits.push({
+        inventoryId: UpdateQtyInventory._id,
+        quantity: quantityUnit,
+        previousQuantity: Number(UpdateQtyInventory.quantity) + quantityUnit,
+        resultingQuantity: Number(UpdateQtyInventory.quantity),
+      });
 
       globalTotalPrice += totalUnitPrice;
 
@@ -376,16 +489,17 @@ const createPallets = async (req: Request, res: Response) => {
         model: item.model,
         inchs: item.inchs,
         descriptionModel: item.descriptionModel,
-        quantityUnit: item.quantityUnit,
+        quantityUnit,
         unitPrice: unitPrice,
         totalUnitPrice: totalUnitPrice,
       });
     }
 
     // 2. Traer costo de mantenimiento
-    const maintenance = await MaintenanceCostModel.findOne();
+    const maintenance = await MaintenanceCostModel.findOne().session(session);
 
     if (!maintenance) {
+      await session.abortTransaction();
       return res.status(404).json({
         ok: false,
         message: "Maintenance cost not found",
@@ -403,18 +517,17 @@ const createPallets = async (req: Request, res: Response) => {
 
     const queryToCount = isMotherGuideEmpty
       ? {
-          clientName: data.clientName,
           status: "Pending guidance",
           isActive: true,
           isDelete: false,
         }
       : {
           motherGuide: motherGuideValue,
-          clientName: data.clientName,
           isActive: true,
           isDelete: false,
         };
-    const allGuidesSameMother = await PalletsModel.find(queryToCount);
+    const allGuidesSameMother = (await PalletsModel.find(queryToCount).session(session))
+      .filter((guide) => normalizeClientName(guide.clientName) === clientName);
 
     const currentPalletCount = allGuidesSameMother.reduce((total, guide) => {
       const guidePalletsCount =
@@ -434,30 +547,42 @@ const createPallets = async (req: Request, res: Response) => {
       ? `No Guide - ${currentPalletCount + 1}`
       : motherGuideValue;
 
-    const query = {
-      motherGuide: generatedMotherGuide,
-      clientName: data.clientName,
-    };
-    const update = {
-      $setOnInsert: {
-        date: data.date,
-        motherGuide: generatedMotherGuide,
-        clientName: data.clientName,
-        isActive: true,
-        isDelete: false,
-        status: isMotherGuideEmpty ? "Pending guidance" : "Not invoiced",
-      },
-      $push: {
-        pallet: newPalletSingle,
-      },
-    };
+    const existingGuide = allGuidesSameMother.find(
+      (guide) => guide.motherGuide === generatedMotherGuide,
+    );
 
-    const saved = await PalletsModel.findOneAndUpdate(query, update, {
-      upsert: true,
-      new: true,
-    });
+    const saved = existingGuide
+      ? await PalletsModel.findByIdAndUpdate(
+          existingGuide._id,
+          {
+            $set: {
+              clientName,
+              ...(normalizedMiamiInvoiceNumber
+                ? { miamiInvoiceNumber: normalizedMiamiInvoiceNumber }
+                : {}),
+            },
+            $push: { pallet: newPalletSingle },
+          },
+          { new: true, session },
+        )
+      : (await PalletsModel.create(
+          [
+            {
+              date: data.date,
+              motherGuide: generatedMotherGuide,
+              clientName,
+              miamiInvoiceNumber: normalizedMiamiInvoiceNumber,
+              isActive: true,
+              isDelete: false,
+              status: isMotherGuideEmpty ? "Pending guidance" : "Not invoiced",
+              pallet: [newPalletSingle],
+            },
+          ],
+          { session },
+        ))[0];
 
     if (!saved) {
+      await session.abortTransaction();
       return res.status(400).json({
         ok: false,
         message: "Not saved",
@@ -466,19 +591,36 @@ const createPallets = async (req: Request, res: Response) => {
       });
     }
 
+    await InventoryMovementModel.create(
+      inventoryExits.map((movement) => ({
+        ...movement,
+        type: "EXIT",
+        miamiInvoiceNumber: normalizedMiamiInvoiceNumber,
+        referenceType: "PALLET",
+        referenceId: String(saved._id),
+        createdBy: (req as any).user?._id,
+      })),
+      { session },
+    );
+
+    await session.commitTransaction();
+
     return res.status(201).json({
       ok: true,
       message: "Saved",
       mensaje: "Guardado correctamente",
-      data: saved,
+      data: serializePallet(saved),
     });
   } catch (error) {
+    await session.abortTransaction();
     return res.status(500).json({
       ok: false,
       message: "Error internal server",
       mensaje: "Error interno del servidor",
       data: null,
     });
+  } finally {
+    session.endSession();
   }
 };
 
@@ -501,7 +643,7 @@ const getPalletsBillings = async (req: Request, res: Response) => {
       ok: true,
       message: "success",
       mensaje: "Datos obtenidos con éxito",
-      data: palletsInvoices,
+      data: palletsInvoices.map(serializePallet),
     });
   } catch (error) {
     return res.status(500).json({
@@ -527,9 +669,20 @@ const updatePalletsInvoices = async (req: Request, res: Response) => {
       });
     }
 
-    const updatedPallet = await PalletsModel.findOneAndUpdate(
-      { motherGuide: motherGuide, clientName: clientName },
-      { status: status },
+    const palletDoc = await findPalletByClientAndGuide(clientName, motherGuide);
+
+    if (!palletDoc) {
+      return res.status(404).json({
+        ok: false,
+        message: "No found register",
+        mensaje: "No se encontraron registros",
+        data: null,
+      });
+    }
+
+    const updatedPallet = await PalletsModel.findByIdAndUpdate(
+      palletDoc._id,
+      { status: status, clientName: normalizeClientName(clientName) },
       { new: true },
     );
 
@@ -546,7 +699,7 @@ const updatePalletsInvoices = async (req: Request, res: Response) => {
       ok: true,
       message: "Updated",
       mensaje: "Actualizado correctamente",
-      data: updatedPallet,
+      data: serializePallet(updatedPallet),
     });
   } catch (error) {
     return res.status(500).json({
@@ -559,12 +712,15 @@ const updatePalletsInvoices = async (req: Request, res: Response) => {
 };
 
 const deletePallets = async (req: Request, res: Response) => {
+  const session = await PalletsModel.startSession();
+
   try {
+    session.startTransaction();
+
     const { motherGuide, clientName } = req.body;
-    console.log(motherGuide);
-    console.log(clientName);
 
     if (!motherGuide || !clientName) {
+      await session.abortTransaction();
       return res.status(400).json({
         ok: false,
         message: "Missing data",
@@ -573,13 +729,10 @@ const deletePallets = async (req: Request, res: Response) => {
       });
     }
 
-    const deletedPallet = await PalletsModel.findOneAndUpdate(
-      { motherGuide: motherGuide, clientName: clientName },
-      { isDelete: true, isActive: false },
-      { new: true },
-    );
+    const palletDoc = await findPalletByClientAndGuide(clientName, motherGuide);
 
-    if (!deletedPallet) {
+    if (!palletDoc) {
+      await session.abortTransaction();
       return res.status(404).json({
         ok: false,
         message: "No found register",
@@ -588,19 +741,101 @@ const deletePallets = async (req: Request, res: Response) => {
       });
     }
 
+    const normalizedClient = normalizeClientName(clientName);
+    const restoreMovements: any[] = [];
+
+    for (const disk of palletDoc.pallet || []) {
+      for (const item of disk.pallets || []) {
+        const quantityUnit = Number(item.quantityUnit);
+
+        if (!Number.isFinite(quantityUnit) || quantityUnit <= 0) continue;
+
+        const inventoryItem = await findInventoryItemForClient({
+          clientName: normalizedClient,
+          brandTV: item.model,
+          inchs: item.inchs,
+          model: item.descriptionModel,
+          session,
+        });
+
+        if (!inventoryItem) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            ok: false,
+            message: "No restore inventory",
+            mensaje: "No inventario restaurado",
+            data: item,
+          });
+        }
+
+        const restoredInventory = await InventoryModel.findByIdAndUpdate(
+          inventoryItem._id,
+          { $inc: { quantity: quantityUnit } },
+          { new: true, session },
+        );
+
+        if (!restoredInventory) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            ok: false,
+            message: "No restore inventory",
+            mensaje: "No inventario restaurado",
+            data: item,
+          });
+        }
+
+        restoreMovements.push({
+          inventoryId: restoredInventory._id,
+          type: "ADJUSTMENT",
+          quantity: quantityUnit,
+          previousQuantity: Number(restoredInventory.quantity) - quantityUnit,
+          resultingQuantity: Number(restoredInventory.quantity),
+          miamiInvoiceNumber: palletDoc.miamiInvoiceNumber,
+          referenceType: "PALLET_DELETE",
+          referenceId: String(palletDoc._id),
+          createdBy: (req as any).user?._id,
+        });
+      }
+    }
+
+    const deletedPallet = await PalletsModel.findByIdAndUpdate(
+      palletDoc._id,
+      { isDelete: true, isActive: false, clientName: normalizedClient },
+      { new: true, session },
+    );
+
+    if (!deletedPallet) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        ok: false,
+        message: "No found register",
+        mensaje: "No se encontraron registros",
+        data: null,
+      });
+    }
+
+    if (restoreMovements.length > 0) {
+      await InventoryMovementModel.create(restoreMovements, { session });
+    }
+
+    await session.commitTransaction();
+
     return res.status(200).json({
       ok: true,
       message: "Deleted",
       mensaje: "Eliminado correctamente",
-      data: deletedPallet,
+      data: serializePallet(deletedPallet),
     });
   } catch (error) {
+    await session.abortTransaction();
     return res.status(500).json({
       ok: false,
       message: "Error internal server",
       mensaje: "Error interno del servidor",
       data: null,
     });
+  } finally {
+    session.endSession();
   }
 };
 
@@ -650,19 +885,20 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
           data: null,
         });
       }
-      const query = {
+      const inventoryItem = await findInventoryItemForClient({
+        clientName: normalizeClientName(docPallet.clientName),
         brandTV: itemDeleted.model,
         model: itemDeleted.descriptionModel,
         inchs: itemDeleted.inchs,
-        client: docPallet.clientName,
-        isDisabled: false
-      };
+      });
 
-      const restoreInv = await InventoryModel.findOneAndUpdate(
-        query,
-        { $inc: { quantity: itemDeleted.quantityUnit } },
-        { new: true },
-      );
+      const restoreInv = inventoryItem
+        ? await InventoryModel.findByIdAndUpdate(
+            inventoryItem._id,
+            { $inc: { quantity: itemDeleted.quantityUnit } },
+            { new: true },
+          )
+        : null;
 
       if (!restoreInv) {
         return res.status(400).json({
@@ -678,6 +914,18 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
         docPallet.pallet.splice(indexPallet, 1);
       }
       await docPallet.save();
+
+      await InventoryMovementModel.create({
+        inventoryId: restoreInv._id,
+        type: "ADJUSTMENT",
+        quantity: itemDeleted.quantityUnit,
+        previousQuantity: Number(restoreInv.quantity) - Number(itemDeleted.quantityUnit),
+        resultingQuantity: Number(restoreInv.quantity),
+        miamiInvoiceNumber: docPallet.miamiInvoiceNumber,
+        referenceType: "PALLET_ITEM_DELETE",
+        referenceId: String(docPallet._id),
+        createdBy: (req as any).user?._id,
+      });
 
       return res.status(200).json({
         ok: true,
@@ -731,7 +979,7 @@ const updateGuide = async (req: Request, res: Response) => {
       ok: true,
       message: "Update",
       mensaje: "Update",
-      data: update,
+      data: serializePallet(update),
     });
   } catch (error) {
     console.error(error);

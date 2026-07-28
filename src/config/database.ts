@@ -1,18 +1,14 @@
 const mongoose = require('mongoose');
+import { config } from "./env";
 
 const dbConnection = async () => {
 	try {
 		await mongoose.set('strictQuery', false);
 
-		if(process.env.NODE_ENV === 'DEV'){
-			await mongoose.connect(process.env.DB_CONN_DEV);
-			return;
-		}
-
-		await mongoose.connect(process.env.DB_CONN_PROD);
+		await mongoose.connect(config.mongodbUri);
 		return;
 	} catch (error) {
-		throw new Error('Error starting the database');
+		throw error;
 	}
 }
 

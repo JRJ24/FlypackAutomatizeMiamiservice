@@ -135,6 +135,11 @@ const PalletsMainSchema = new Schema<IPalletsMain>(
       type: String,
       required: false,
     },
+    miamiInvoiceNumber: {
+      type: String,
+      required: false,
+      index: true,
+    },
     pallet: {
       type: [PalletSingleSchema],
       required: true,

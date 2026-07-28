@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import UsersModel from "../models/Users.model";
 import { hashPassword } from "../helpers/hashpassword";
 import { Types } from "mongoose";
+import { sanitizeUser } from "../helpers/sanitizeUser";
 const crypto = require("crypto");
 
 const GetUsers = async (req: Request, res: Response) => {
@@ -20,7 +21,7 @@ const GetUsers = async (req: Request, res: Response) => {
       ok: true,
       message: "hola",
       mensaje: "hello",
-      data: users,
+      data: users.map((user) => sanitizeUser(user)),
     });
   } catch (error) {
     return res.status(500).json({
@@ -37,6 +38,7 @@ const getUserClient = async (req: Request, res: Response) => {
     const clients = await UsersModel.find({
       role: "CLIENTFLYPACK",
       isActive: true,
+      isDelete: false,
     }).select("name");
 
     if (!clients || clients.length === 0) {
@@ -52,7 +54,7 @@ const getUserClient = async (req: Request, res: Response) => {
       ok: true,
       message: "Clients",
       mensaje: "Clientes",
-      data: clients,
+      data: clients.map((client) => sanitizeUser(client)),
     });
   } catch (error) {
     return res.status(500).json({
@@ -90,7 +92,7 @@ const createUser = async (req: Request, res: Response) => {
       ok: true,
       message: "User created",
       mensaje: "User creado",
-      data: newUser,
+      data: sanitizeUser(newUser),
     });
   } catch (error) {
     console.error(error);
@@ -116,6 +118,10 @@ const updatePutUser = async (req: Request, res: Response) => {
       });
     }
 
+    if (data.password) {
+      data.password = await hashPassword(data.password);
+    }
+
     const update = await UsersModel.findByIdAndUpdate(_id, data, { new: true });
 
     if (!update) {
@@ -131,7 +137,7 @@ const updatePutUser = async (req: Request, res: Response) => {
       ok: true,
       message: "Update",
       mensaje: "Actualizado",
-      data: update,
+      data: sanitizeUser(update),
     });
   } catch (error) {
     return res.status(500).json({
@@ -145,7 +151,12 @@ const updatePutUser = async (req: Request, res: Response) => {
 
 const updatePassword = async (req: Request, res: Response) => {
   try {
-    const { ...data } = req.body;
+    return res.status(501).json({
+      ok: false,
+      message: "Not implemented",
+      mensaje: "No implementado",
+      data: null,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -158,7 +169,12 @@ const updatePassword = async (req: Request, res: Response) => {
 
 const updateEmail = async (req: Request, res: Response) => {
   try {
-    const { ...data } = req.body;
+    return res.status(501).json({
+      ok: false,
+      message: "Not implemented",
+      mensaje: "No implementado",
+      data: null,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,
@@ -203,7 +219,7 @@ const disableUser = async (req: Request, res: Response) => {
       ok: true,
       message: "Disabled",
       mensaje: "Deshabilitado",
-      data: disabled,
+      data: sanitizeUser(disabled),
     });
   } catch (error) {
     console.log(error);
@@ -248,7 +264,7 @@ const deletedUser = async (req: Request, res: Response) => {
       ok: true,
       message: "Deleted",
       mensaje: "Eliminado",
-      data: deleted,
+      data: sanitizeUser(deleted),
     });
   } catch (error) {
     return res.status(500).json({

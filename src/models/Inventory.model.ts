@@ -17,10 +17,15 @@ const InventorySchema = new Schema<IInventoryTV>({
   quantity: {
     type: Number,
     required: true,
+    min: 0,
   },
   client: {
     type: String,
     required: true
+  },
+  lastMiamiInvoiceNumber: {
+    type: String,
+    required: false,
   },
   isDisabled: {
     type: Boolean,
@@ -28,5 +33,10 @@ const InventorySchema = new Schema<IInventoryTV>({
     default: false,
   },
 });
+
+InventorySchema.index(
+  { client: 1, brandTV: 1, inchs: 1, model: 1 },
+  { unique: true, partialFilterExpression: { isDisabled: false } },
+);
 
 export default model<IInventoryTV>("Inventory", InventorySchema);

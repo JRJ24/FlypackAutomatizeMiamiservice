@@ -97,11 +97,24 @@ const getPriceModel = async (req: Request, res: Response) => {
       mensaje: "Exito",
       data: payload,
     });
-  } catch (error) {}
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL SERVER",
+      mensaje: "ERROR INTERNO DEL SERVIDOR",
+      data: null,
+    });
+  }
 };
 
 const updatePrice = async (req: Request, res: Response) => {
   try {
+    return res.status(501).json({
+      ok: false,
+      message: "Not implemented",
+      mensaje: "No implementado",
+      data: null,
+    });
   } catch (error) {
     return res.status(500).json({
       ok: false,

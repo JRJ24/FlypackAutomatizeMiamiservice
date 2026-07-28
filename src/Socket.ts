@@ -1,15 +1,11 @@
 import { Server as HttpServer } from "http";
 import { Server } from "socket.io";
-
-const origin =
-  process.env.NODE_ENV === "PROD"
-    ? process.env.URL_FRONTEND
-    : "http://localhost:5173";
+import { config } from "./config/env";
 
 const initializeSocket = (server: HttpServer) => {
   const io = new Server(server, {
     cors: {
-      origin: origin,
+      origin: config.corsOrigins,
       credentials: true,
     },
   });

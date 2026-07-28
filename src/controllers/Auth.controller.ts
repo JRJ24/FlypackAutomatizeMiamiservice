@@ -1,199 +1,136 @@
 import { Request, Response } from "express";
-import { generateJWT, deleteJWT } from "../middlewares/token";
 import bcrypt from "bcryptjs";
-import userModel from "../models/Users.model";
 import crypto from "crypto";
+import userModel from "../models/Users.model";
 import UsersModel from "../models/Users.model";
-import { emailForgotPassword } from "./../helpers/emailManaged";
-import { hashPassword } from "./../helpers/hashpassword";
+import {
+  createAuthSession,
+  rotateRefreshToken,
+  revokeRefreshSession,
+  revokeUserSessions,
+} from "../middlewares/token";
+import { emailForgotPassword } from "../helpers/emailManaged";
+import { hashPassword } from "../helpers/hashpassword";
+import { config } from "../config/env";
+import { sanitizeUser } from "../helpers/sanitizeUser";
 
-// Generate Token by user credentials
+const invalidCredentials = {
+  ok: false,
+  message: "Credenciales invalidas",
+  mensaje: "Credenciales invalidas",
+  data: null,
+};
+
+const getEmailIndex = (email: string) =>
+  crypto.createHash("sha256").update(email.trim().toLowerCase()).digest("hex");
+
 const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
-    // const allowedDomains = process.env.EMAIL_ENDS.split(',');
-
-    // const isValidEmail = allowedDomains.some(domain => email.endsWith(domain));
-    if (!email) {
-      return res.status(400).json({
-        ok: false,
-        message: "Invalid Credentials email is required",
-      });
+    if (!email || !password) {
+      return res.status(401).json(invalidCredentials);
     }
 
-    const searchHash = crypto.createHash("sha256").update(email).digest("hex");
+    const user = await userModel.findOne({ emailIndex: getEmailIndex(String(email)) });
 
-    const user = await userModel.findOne({ emailIndex: searchHash });
-
-    if (!user) {
-      return res.status(404).json({
-        ok: false,
-        message: "no user found",
-      });
-    }
-
-    if (user.isDelete) {
-      return res.status(404).json({
-        ok: false,
-        message: "user is delete",
-      });
-    }
-    if (!user.isActive) {
-      return res.status(404).json({
-        ok: false,
-        message: "user is not active",
-      });
+    if (!user || user.isDelete || !user.isActive) {
+      return res.status(401).json(invalidCredentials);
     }
 
     const isMatch = await bcrypt.compare(password, user.password || "");
+
     if (!isMatch) {
-      return res.status(400).json({ message: "Invalid credentials pas" });
+      return res.status(401).json(invalidCredentials);
     }
 
-    const userToSend = user.toObject();
-    delete userToSend.password;
+    const session = await createAuthSession(user, req, res);
 
-    const token = await generateJWT(userToSend);
-
-    res.json({
+    return res.status(200).json({
       ok: true,
-      user: userToSend,
-      message: "ME AUTO SUCESS LOGIN",
-      mensaje: "ME AUTO EXITO INICIO DE SESION",
-      token,
+      user: session.user,
+      data: session.user,
+      message: "Login successful",
+      mensaje: "Inicio de sesion exitoso",
     });
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ ok: false, message: "Server error", data: null });
   }
 };
 
-// Logout User by invalidating the token
 const logout = async (req: Request, res: Response) => {
-  const token = req.header("x-access-token") || "";
   try {
-    await deleteJWT(token);
-    res.json({
+    await revokeRefreshSession(req, res);
+
+    return res.status(200).json({
       ok: true,
       message: "Logged out successfully",
+      mensaje: "Sesion cerrada correctamente",
+      data: null,
     });
   } catch (error) {
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ ok: false, message: "Server error", data: null });
   }
 };
 
 const loginGoogle = async (req: Request, res: Response) => {
   try {
     const user = req.user as any;
-    if (process.env.NODE_ENV === "PROD") {
-      if (!user) {
-        return res.redirect(
-          "https://operaciones.flypack.do/login?error=auth_failed",
-        );
-      }
 
-      if (user.isDelete) {
-        return res.redirect(
-          "https://operaciones.flypack.do/login?error=account_deleted",
-        );
-      }
-
-      if (!user.isActive) {
-        return res.redirect(
-          "https://operaciones.flypack.do/login?error=account_inactive",
-        );
-      }
-
-      const userToSend = user.toObject ? user.toObject() : user;
-      delete userToSend.password;
-
-      const token = await generateJWT(userToSend);
-
-      // IMPORTANTE: Redirige al frontend con el token
-      res.redirect(
-        `https://operaciones.flypack.do/login/callback?token=${token}&user=${encodeURIComponent(JSON.stringify(userToSend))}`,
-      );
-    } else {
-      if (!user) {
-        return res.redirect(
-          "https://operaciones.flypack.do/login?error=auth_failed",
-        );
-      }
-
-      if (user.isDelete) {
-        return res.redirect(
-          "https://operaciones.flypack.do/login?error=account_deleted",
-        );
-      }
-
-      if (!user.isActive) {
-        return res.redirect(
-          "https://operaciones.flypack.do/login?error=account_inactive",
-        );
-      }
-
-      const userToSend = user.toObject ? user.toObject() : user;
-      delete userToSend.password;
-
-      const token = await generateJWT(userToSend);
-
-      // IMPORTANTE: Redirige al frontend con el token
-      res.redirect(
-        `http://localhost:5173/login/callback?token=${token}&user=${encodeURIComponent(JSON.stringify(userToSend))}`,
-      );
+    if (!user || user.isDelete || !user.isActive) {
+      return res.redirect(`${config.frontendUrl}/login?error=auth_failed`);
     }
+
+    await createAuthSession(user, req, res);
+
+    return res.redirect(`${config.frontendUrl}/login/callback?success=true`);
   } catch (error) {
     console.error(error);
-    res.redirect("http://localhost:5173/login?error=server_error");
+    return res.redirect(`${config.frontendUrl}/login?error=server_error`);
   }
 };
 
-// const refresh = async (req: Request, res: Response) => {
-//   try{
-//     const user = req.user as any;
+const refreshToken = async (req: Request, res: Response) => {
+  try {
+    const refreshedSession = await rotateRefreshToken(req, res);
 
-//     if(!user){
-//       return res.status(404).json({
-//         ok: false,
-//         message: "No send User"
-//       })
-//     }
+    if (!refreshedSession) {
+      return res.status(401).json({
+        ok: false,
+        message: "Unauthorized",
+        mensaje: "No autorizado",
+        data: null,
+      });
+    }
 
-//     const freshUser = await userModel.findOne({ email: user.email });
+    return res.status(200).json({
+      ok: true,
+      message: "Session refreshed",
+      mensaje: "Sesion renovada",
+      user: refreshedSession.user,
+      data: refreshedSession.user,
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, message: "Server error", data: null });
+  }
+};
 
-//     if(!freshUser){
-//       return res.status(404).json({
-//         ok: false,
-//         message: "not found"
-//       })
-//     }
+const me = async (req: Request, res: Response) => {
+  const user = sanitizeUser((req as any).user || {});
 
-//     const freshUserToken = freshUser.toObject();
-//     delete freshUserToken.password;
-
-//     const newToken = await generateJWT(freshUserToken);
-
-//     if(!newToken) {
-//       return res.status(403).json({
-//         ok: false,
-//         message: "token no generated"
-//       })
-//     }
-
-//     return res.status(200).json({
-//       ok: true,
-//       token: newToken,
-//       message: "Token regenerated"
-//     })
-//   }catch(err){
-//     res.status(500).json({ ok: false, message: "Server error" });
-//   }
-// }
+  return res.status(200).json({
+    ok: true,
+    message: "Authenticated user",
+    mensaje: "Usuario autenticado",
+    user,
+    data: user,
+  });
+};
 
 const FORGOTPASSWORD = async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
-    let resetLink: string;
+
     if (!email) {
       return res.status(400).json({
         ok: false,
@@ -203,43 +140,31 @@ const FORGOTPASSWORD = async (req: Request, res: Response) => {
       });
     }
 
-    const verifyEmail = await UsersModel.findOne({ email: email });
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const verifyEmail = await UsersModel.findOne({ emailIndex: getEmailIndex(normalizedEmail) });
 
     if (verifyEmail) {
       const resetToken = crypto.randomBytes(20).toString("hex");
-
       const passwordResetToken = crypto
         .createHash("sha256")
         .update(resetToken)
         .digest("hex");
 
-      const passwordResetExpires = Date.now() + 10 * 60 * 1000;
-
       verifyEmail.resetPasswordToken = passwordResetToken;
-      verifyEmail.resetPasswordExpires = passwordResetExpires;
+      verifyEmail.resetPasswordExpires = Date.now() + 10 * 60 * 1000;
 
       await verifyEmail.save();
-
-      if (process.env.NODE_ENV === "PROD") {
-        resetLink = `https://operaciones.flypack.do/RESETPASSWORD?token=${resetToken}`;
-      } else {
-        resetLink = `http://localhost:5173/RESETPASSWORD?token=${resetToken}`;
-      }
-
-      await emailForgotPassword(email, resetLink);
-
-      return res.status(200).json({
-        ok: true,
-        message: "In process",
-        mensaje: "En proceso",
-        data: null,
-      });
+      await emailForgotPassword(
+        normalizedEmail,
+        `${config.frontendUrl}/RESETPASSWORD?token=${resetToken}`,
+      );
     }
 
-    return res.status(404).json({
-      ok: false,
-      message: "User not found",
-      mensaje: "Usuario no encontrado",
+    return res.status(200).json({
+      ok: true,
+      message: "If the account exists, you will receive an email.",
+      mensaje: "Si la cuenta existe, recibiras un correo.",
+      data: null,
     });
   } catch (error) {
     return res.status(500).json({
@@ -255,12 +180,7 @@ const RESETPASSWORD = async (req: Request, res: Response) => {
   try {
     const { newPassword, reNewPassword, recoveryToken } = req.body;
 
-    // More explicit validation
-    if (
-      !newPassword ||
-      typeof newPassword !== "string" ||
-      newPassword.trim() === ""
-    ) {
+    if (!newPassword || typeof newPassword !== "string" || newPassword.trim() === "") {
       return res.status(400).json({
         ok: false,
         message: "No data",
@@ -278,11 +198,21 @@ const RESETPASSWORD = async (req: Request, res: Response) => {
       });
     }
 
+    if (newPassword !== reNewPassword) {
+      return res.status(400).json({
+        ok: false,
+        message: "Passwords do not match",
+        mensaje: "Las contrasenas no coinciden",
+        data: null,
+      });
+    }
+
     if (!recoveryToken || typeof recoveryToken !== "string") {
       return res.status(400).json({
         ok: false,
-        message: "Token de recuperación faltante",
-        mensaje: "No se proporcionó un token válido",
+        message: "Token de recuperacion faltante",
+        mensaje: "No se proporciono un token valido",
+        data: null,
       });
     }
 
@@ -296,45 +226,58 @@ const RESETPASSWORD = async (req: Request, res: Response) => {
       resetPasswordExpires: { $gt: Date.now() },
     });
 
-    if (!user || !user.password) {
+    if (!user) {
       return res.status(400).json({
         ok: false,
-        message: "No User o no user with password",
-        mensaje: "No User",
+        message: "Invalid or expired token",
+        mensaje: "Token invalido o expirado",
         data: null,
       });
     }
 
-    const isMatch = await bcrypt.compare(newPassword, user.password);
+    const isMatch = user.password
+      ? await bcrypt.compare(newPassword, user.password)
+      : false;
+
     if (isMatch) {
       return res.status(400).json({
         ok: false,
         message: "This password is the same",
+        mensaje: "La contrasena es igual a la actual",
+        data: null,
       });
     }
 
-    const hashPass = await hashPassword(newPassword);
-
-    user.password = hashPass;
+    user.password = await hashPassword(newPassword);
     user.resetPasswordToken = "";
     user.resetPasswordExpires = 0;
 
     await user.save();
+    await revokeUserSessions(user._id);
 
     return res.status(200).json({
       ok: true,
-      message: "The password update sucessfully",
-      mensaje: "La contraseña fue actualzada con exito",
-      data: "Sucess",
+      message: "The password update successfully",
+      mensaje: "La contrasena fue actualizada con exito",
+      data: "Success",
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
       message: "Server error",
       mensaje: "Error en el servidor",
+      data: null,
     });
   }
 };
 
-export { login, logout, loginGoogle, FORGOTPASSWORD, RESETPASSWORD };
+export {
+  login,
+  logout,
+  loginGoogle,
+  refreshToken,
+  me,
+  FORGOTPASSWORD,
+  RESETPASSWORD,
+};

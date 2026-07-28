@@ -1,5 +1,3 @@
-import dotenv from "dotenv";
-dotenv.config();
 import express from "express";
 import http from "http";
 import * as morgan from "morgan";
@@ -20,6 +18,7 @@ import { authGoogle } from "./middlewares/authGoogle";
 import seedUsers from "./seeders/userClients";
 import MaintenanceBanks from "./seeders/banksAccounts";
 import seedFutureCounters from "./seeders/counterYear";
+import { config } from "./config/env";
 
 const app: express.Application = express();
 const server = http.createServer(app);
@@ -37,17 +36,19 @@ const server = http.createServer(app);
 
 app.use(express.json({ limit: "10mb" }));
 
-const origin =
-  process.env.NODE_ENV === "PROD"
-    ? process.env.URL_FRONTEND_PROD
-    : process.env.URL_FRONTEND_DEV;
-
 app.use(
   cors({
-    origin: origin,
+    origin(requestOrigin, callback) {
+      if (!requestOrigin || config.corsOrigins.includes(requestOrigin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error("Origin not allowed"));
+    },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization", "x-access-token"],
+    allowedHeaders: ["Content-Type"],
   }),
 );
 
@@ -69,32 +70,33 @@ app.use(express.static(path.join(__dirname, "public")));
 //   next();
 // });
 
-app.use("/api", router);
-
 app.set("trust proxy", 1);
 
 authGoogle();
 app.use(passport.initialize());
 
-const PORT = process.env.PORT || 5000;
+app.use("/api", router);
 
 dbConnection()
   .then(async () => {
-    await processRouterSeeder();
-    await priceSeeder();
-    await MaintenanceCostSeeders();
-    await seedUsers();
-    await MaintenanceBanks();
-    await seedFutureCounters();
-    server.listen(PORT, async () => {
+    if (config.runSeedersOnStart) {
+      await processRouterSeeder();
+      await priceSeeder();
+      await MaintenanceCostSeeders();
+      await seedUsers();
+      await MaintenanceBanks();
+      await seedFutureCounters();
+    }
+
+    server.listen(config.port, async () => {
       const io = initializeSocket(server);
       app.set("socketio", io);
-      console.log(`http://localhost:${PORT}`);
+      console.log(`http://localhost:${config.port}`);
     });
 
     process.on("SIGTERM", async () => {
       // await shutdownPostHog();
-      process.exit(0);
+      server.close(() => process.exit(0));
     });
   })
   .catch((err: any) => {

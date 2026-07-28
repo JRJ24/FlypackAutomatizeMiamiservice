@@ -1,96 +1,242 @@
-import { Request, Response, NextFunction } from "express";
+import { Request, Response, type RequestHandler } from "express";
 import * as jwt from "jsonwebtoken";
-import UserModel from "./../models/Users.model";
+import crypto from "crypto";
+import { Types } from "mongoose";
+import { config } from "../config/env";
+import UserModel from "../models/Users.model";
+import SessionModel from "../models/Session.model";
+import type { IUserModel } from "../interfaces/IUsersmodel";
+import { sanitizeUser } from "../helpers/sanitizeUser";
 
-interface AuthRequest extends Request {
-  user?: Object;
-}
-
-interface IDecodedToken {
-  data: {
-    _id: string;
-  };
+interface IDecodedAccessToken {
+  sub: string;
+  role?: string;
+  sessionId: string;
   iat: number;
   exp: number;
 }
 
-const validatJWT = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction,
-) => {
-  let token = <string>req.headers["x-access-token"];
+const parseCookies = (req: Request) => {
+  const cookieHeader = req.headers.cookie;
+  const cookies: Record<string, string> = {};
 
-  if (!token) {
-    const authHeader = req.headers["authorization"];
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.split(" ")[1];
-    }
+  if (!cookieHeader) return cookies;
+
+  cookieHeader.split(";").forEach((cookie) => {
+    const [rawName, ...rawValue] = cookie.trim().split("=");
+
+    if (!rawName || rawValue.length === 0) return;
+
+    cookies[rawName] = decodeURIComponent(rawValue.join("="));
+  });
+
+  return cookies;
+};
+
+const hashToken = (token: string) =>
+  crypto.createHash("sha256").update(token).digest("hex");
+
+const getCookieOptions = (maxAge: number) => ({
+  httpOnly: true,
+  secure: config.isProduction,
+  sameSite: "lax" as const,
+  path: "/",
+  maxAge,
+});
+
+const setAuthCookies = (
+  res: Response,
+  accessToken: string,
+  refreshToken: string,
+) => {
+  res.cookie(
+    config.accessTokenCookieName,
+    accessToken,
+    getCookieOptions(config.accessTokenMaxAgeMs),
+  );
+  res.cookie(
+    config.refreshTokenCookieName,
+    refreshToken,
+    getCookieOptions(config.refreshTokenMaxAgeMs),
+  );
+};
+
+const clearAuthCookies = (res: Response) => {
+  res.clearCookie(config.accessTokenCookieName, { path: "/" });
+  res.clearCookie(config.refreshTokenCookieName, { path: "/" });
+};
+
+const clearAccessCookie = (res: Response) => {
+  res.clearCookie(config.accessTokenCookieName, { path: "/" });
+};
+
+const generateAccessToken = (user: IUserModel, sessionId: string) =>
+  jwt.sign(
+    {
+      sub: String(user._id),
+      role: user.role,
+      sessionId,
+    },
+    config.jwtSecret,
+    { expiresIn: config.accessTokenExpiresIn as jwt.SignOptions["expiresIn"] },
+  );
+
+const createAuthSession = async (
+  user: IUserModel,
+  req: Request,
+  res: Response,
+) => {
+  const refreshToken = crypto.randomBytes(64).toString("hex");
+  const expiresAt = new Date(Date.now() + config.refreshTokenMaxAgeMs);
+
+  const session = await SessionModel.create({
+    userId: user._id,
+    refreshTokenHash: hashToken(refreshToken),
+    userAgent: req.get("user-agent"),
+    ipAddress: req.ip,
+    expiresAt,
+  });
+
+  const accessToken = generateAccessToken(user, String(session._id));
+  setAuthCookies(res, accessToken, refreshToken);
+
+  return {
+    user: sanitizeUser(user),
+    sessionId: String(session._id),
+  };
+};
+
+const rotateRefreshToken = async (req: Request, res: Response) => {
+  const cookies = parseCookies(req);
+  const refreshToken = cookies[config.refreshTokenCookieName];
+
+  if (!refreshToken) {
+    clearAuthCookies(res);
+    return null;
   }
 
-  if (!token) {
+  const session = await SessionModel.findOne({
+    refreshTokenHash: hashToken(refreshToken),
+    revokedAt: { $exists: false },
+    expiresAt: { $gt: new Date() },
+  });
+
+  if (!session) {
+    clearAuthCookies(res);
+    return null;
+  }
+
+  const user = await UserModel.findById(session.userId);
+
+  if (!user || user.isDelete || !user.isActive) {
+    session.revokedAt = new Date();
+    await session.save();
+    clearAuthCookies(res);
+    return null;
+  }
+
+  const nextRefreshToken = crypto.randomBytes(64).toString("hex");
+  session.refreshTokenHash = hashToken(nextRefreshToken);
+  session.expiresAt = new Date(Date.now() + config.refreshTokenMaxAgeMs);
+  session.userAgent = req.get("user-agent");
+  session.ipAddress = req.ip;
+  await session.save();
+
+  const accessToken = generateAccessToken(user, String(session._id));
+  setAuthCookies(res, accessToken, nextRefreshToken);
+
+  return {
+    user: sanitizeUser(user),
+    sessionId: String(session._id),
+  };
+};
+
+const revokeRefreshSession = async (req: Request, res: Response) => {
+  const cookies = parseCookies(req);
+  const refreshToken = cookies[config.refreshTokenCookieName];
+
+  if (refreshToken) {
+    await SessionModel.findOneAndUpdate(
+      {
+        refreshTokenHash: hashToken(refreshToken),
+        revokedAt: { $exists: false },
+      },
+      { revokedAt: new Date() },
+    );
+  }
+
+  clearAuthCookies(res);
+};
+
+const revokeUserSessions = async (userId: string | Types.ObjectId) => {
+  await SessionModel.updateMany(
+    {
+      userId,
+      revokedAt: { $exists: false },
+    },
+    { revokedAt: new Date() },
+  );
+};
+
+const validatJWT: RequestHandler = async (req, res, next) => {
+  const cookies = parseCookies(req);
+  const accessToken = cookies[config.accessTokenCookieName];
+
+  if (!accessToken) {
     return res.status(401).json({
-      message: "Unauthorized - No token provided",
+      ok: false,
+      message: "Unauthorized",
+      mensaje: "No autorizado",
+      data: null,
     });
   }
 
   try {
-    const decoded = jwt.verify(
-      token,
-      process.env.SECRETORPRIVATEKEY as string,
-    ) as IDecodedToken;
+    const decoded = jwt.verify(accessToken, config.jwtSecret) as IDecodedAccessToken;
 
-    const id = decoded.data._id;
+    if (!decoded.sub || !decoded.sessionId) {
+      throw new Error("Invalid token payload");
+    }
 
-    const user = await UserModel.findById(id);
+    const [session, user] = await Promise.all([
+      SessionModel.findOne({
+        _id: decoded.sessionId,
+        userId: decoded.sub,
+        revokedAt: { $exists: false },
+        expiresAt: { $gt: new Date() },
+      }),
+      UserModel.findById(decoded.sub),
+    ]);
 
-    if (!user) {
+    if (!session || !user || user.isDelete || !user.isActive) {
       return res.status(401).json({
-        message: "User does not exist",
+        ok: false,
+        message: "Unauthorized",
+        mensaje: "No autorizado",
+        data: null,
       });
     }
 
-    req.user = user;
+    (req as any).user = user;
+    (req as any).sessionId = decoded.sessionId;
     next();
   } catch (error) {
+    clearAccessCookie(res);
+
     return res.status(401).json({
-      message: "Unauthorized - Invalid Token",
+      ok: false,
+      message: "Unauthorized",
+      mensaje: "No autorizado",
+      data: null,
     });
   }
 };
 
-const deleteJWT = (token:string) => {
-  return new Promise((resolve, reject) => {
-    jwt.verify(token, process.env.SECRETORPRIVATEKEY as string, (err, decoded) => {
-      if (err) {
-        reject("Invalid token");
-      } else {
-        resolve(decoded);
-      }
-    });
-  });
+export {
+  validatJWT,
+  createAuthSession,
+  rotateRefreshToken,
+  revokeRefreshSession,
+  revokeUserSessions,
+  clearAuthCookies,
 };
-
-
-const generateJWT = (data: any) => {
-  return new Promise((resolve, reject) => {
-    const payload = { data };
-    jwt.sign(
-      payload,
-      process.env.SECRETORPRIVATEKEY as string,
-      {
-        expiresIn: "168h",
-      },
-      (err, token) => {
-        if (err) {
-          console.error("Error exacto de JWT:", err);
-          reject("Couln't generate token");
-        } else {
-          resolve(token);
-        }
-      }
-    );
-  });
-};
-
-export { validatJWT, deleteJWT, generateJWT };
