@@ -10,7 +10,8 @@
     "build": "tsc && tsc-alias",
     "clean": "rimraf ./dist && mkdir dist",
     "db:seed": "ts-node src/database/seed.ts",
-    "db:migrate:inventory-indexes": "ts-node src/database/migrateInventoryIndexes.ts"
+    "db:migrate:inventory-indexes": "ts-node src/database/migrateInventoryIndexes.ts",
+    "db:migrate:pallet-partial-billing": "ts-node src/database/migratePalletPartialBilling.ts"
   },
   "keywords": [],
   "author": "",

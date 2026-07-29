@@ -2,6 +2,45 @@ import { model, Schema } from "mongoose";
 import type { IInvoices } from "../interfaces/IInvoices";
 import CounterYearModel from "./CounterYear.model";
 
+const InvoiceItemSchema = new Schema(
+  {
+    packingId: String,
+    lineId: String,
+    packingDescription: String,
+    brandTV: {
+      type: String,
+      required: true,
+    },
+    inches: {
+      type: String,
+      required: true,
+    },
+    model: {
+      type: String,
+      required: false,
+    },
+    quantity: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    unitPrice: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
+    totalSale: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
+  },
+  {
+    _id: false,
+    versionKey: false,
+  },
+);
+
 const InvoicesSchema = new Schema<IInvoices>({
   client: {
     type: String,
@@ -90,6 +129,17 @@ const InvoicesSchema = new Schema<IInvoices>({
     required: false,
     enum: ["LUGGAGES", "PALLETS"],
   },
+  invoiceScope: {
+    type: String,
+    required: false,
+    enum: ["FULL", "PARTIAL"],
+    default: "FULL",
+  },
+  items: {
+    type: [InvoiceItemSchema],
+    required: false,
+    default: [],
+  },
   totalPaid: {
     type: Number,
     required: true,
@@ -111,6 +161,7 @@ InvoicesSchema.pre("save", async function () {
         runValidators: true,
         upsert: true,
         setDefaultsOnInsert: true,
+        session: this.$session(),
       },
     );
 

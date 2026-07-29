@@ -7,6 +7,13 @@ const invoicesRoutes = express.Router();
 
 invoicesRoutes.post("/", validatJWT, authorize(...ROLE_GROUPS.admin), InvoicesController.createInvoices);
 
+invoicesRoutes.post(
+  "/pallets/partial",
+  validatJWT,
+  authorize(...ROLE_GROUPS.admin),
+  InvoicesController.createPartialPalletInvoice,
+);
+
 invoicesRoutes.get("/", validatJWT, authorize(...ROLE_GROUPS.admin), InvoicesController.getInvoices);
 
 invoicesRoutes.get(

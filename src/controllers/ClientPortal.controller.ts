@@ -11,11 +11,11 @@ import {
 const sum = (values: number[]) =>
   values.reduce((total, value) => total + Number(value || 0), 0);
 
-const getInvoiceForShipment = (
+const getInvoicesForShipment = (
   invoices: Record<string, any>[],
   type: "PALLETS" | "LUGGAGES",
   motherGuide: string,
-) => invoices.find(
+) => invoices.filter(
   (invoice) =>
     String(invoice.type || "").toUpperCase() === type &&
     String(invoice.motherGuide || "") === String(motherGuide || ""),
@@ -62,6 +62,8 @@ const getOverview = async (req: Request, res: Response) => {
         type: invoice.type,
         date: invoice.date,
         status: invoice.status,
+        items: invoice.items || [],
+        totalTVs: invoice.totalTVs,
       }));
 
     const filteredPallets = palletDocs.filter((pallet) =>
@@ -80,7 +82,7 @@ const getOverview = async (req: Request, res: Response) => {
           quantity: Number(item.quantityUnit || 0),
         })),
       );
-      const invoice = getInvoiceForShipment(invoices, "PALLETS", pallet.motherGuide);
+      const shipmentInvoices = getInvoicesForShipment(invoices, "PALLETS", pallet.motherGuide);
 
       return {
         id: String(pallet._id),
@@ -93,8 +95,12 @@ const getOverview = async (req: Request, res: Response) => {
         arrivalStatus: pallet.arrivalStatus || "IN_TRANSIT",
         arrivedAt: pallet.arrivedAt,
         deliveredAt: pallet.deliveredAt,
-        invoiceNumber: invoice?.invoiceNumber,
-        invoiceStatus: invoice?.status,
+        invoiceNumber: shipmentInvoices.length === 1
+          ? shipmentInvoices[0].invoiceNumber
+          : shipmentInvoices.length > 1
+            ? `${shipmentInvoices.length} invoices`
+            : undefined,
+        invoiceStatus: shipmentInvoices[0]?.status,
         totalTVs: sum(items.map((item: any) => item.quantity)),
         items,
       };
@@ -107,7 +113,7 @@ const getOverview = async (req: Request, res: Response) => {
         model: item.modelDescription,
         quantity: Number(item.quantity || 0),
       }));
-      const invoice = getInvoiceForShipment(invoices, "LUGGAGES", suitcase.motherGuide);
+      const shipmentInvoices = getInvoicesForShipment(invoices, "LUGGAGES", suitcase.motherGuide);
 
       return {
         id: String(suitcase._id),
@@ -120,8 +126,12 @@ const getOverview = async (req: Request, res: Response) => {
         arrivalStatus: suitcase.arrivalStatus || "IN_TRANSIT",
         arrivedAt: suitcase.arrivedAt,
         deliveredAt: suitcase.deliveredAt,
-        invoiceNumber: invoice?.invoiceNumber,
-        invoiceStatus: invoice?.status,
+        invoiceNumber: shipmentInvoices.length === 1
+          ? shipmentInvoices[0].invoiceNumber
+          : shipmentInvoices.length > 1
+            ? `${shipmentInvoices.length} invoices`
+            : undefined,
+        invoiceStatus: shipmentInvoices[0]?.status,
         totalTVs: sum(items.map((item: any) => item.quantity)),
         items,
       };
@@ -133,9 +143,13 @@ const getOverview = async (req: Request, res: Response) => {
     const inMiami = sum(inventory.map((item) => item.quantity));
     const inPacking = sum(shipments.map((shipment) => shipment.totalTVs));
     const invoiced = sum(
-      shipments
-        .filter((shipment) => shipment.invoiceNumber || shipment.packingStatus === "Invoiced")
-        .map((shipment) => shipment.totalTVs),
+      invoices.map((invoice) => {
+        if (Array.isArray(invoice.items) && invoice.items.length > 0) {
+          return sum(invoice.items.map((item: any) => item.quantity));
+        }
+
+        return Number(invoice.totalTVs || 0);
+      }),
     );
     const arrived = sum(
       shipments

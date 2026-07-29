@@ -8,6 +8,11 @@ import {
 
 const PalletsDetailsSchema = new Schema<IPalletsDetails>(
   {
+    lineId: {
+      type: String,
+      required: false,
+      index: true,
+    },
     inventoryId: {
       type: Schema.Types.ObjectId,
       ref: "Inventory",
@@ -36,6 +41,18 @@ const PalletsDetailsSchema = new Schema<IPalletsDetails>(
     quantityUnit: {
       type: Number,
       required: true,
+    },
+    arrivedQuantity: {
+      type: Number,
+      required: true,
+      default: 0,
+      min: 0,
+    },
+    invoicedQuantity: {
+      type: Number,
+      required: true,
+      default: 0,
+      min: 0,
     },
 
     totalUnitPrice: {
@@ -112,9 +129,23 @@ const PalletCalcSchema = new Schema<IPalletsCalc>(
 
 const PalletSingleSchema = new Schema<IPalletSingle>(
   {
+    packingId: {
+      type: String,
+      required: false,
+      index: true,
+    },
     palletDescription: {
       type: String,
       required: true,
+    },
+    arrivalStatus: {
+      type: String,
+      enum: ["IN_TRANSIT", "PARTIAL_ARRIVED", "ARRIVED", "MISSING"],
+      default: "IN_TRANSIT",
+    },
+    arrivedAt: {
+      type: Date,
+      required: false,
     },
     pallets: {
       type: [PalletsDetailsSchema],
@@ -156,7 +187,7 @@ const PalletsMainSchema = new Schema<IPalletsMain>(
     },
     arrivalStatus: {
       type: String,
-      enum: ["IN_TRANSIT", "ARRIVED", "DELIVERED"],
+      enum: ["IN_TRANSIT", "PARTIAL_ARRIVED", "ARRIVED", "DELIVERED"],
       default: "IN_TRANSIT",
     },
     arrivedAt: {
@@ -173,7 +204,7 @@ const PalletsMainSchema = new Schema<IPalletsMain>(
     },
     status: {
       type: String,
-      enum: ["Invoiced", "Not invoiced", "Pending guidance"],
+      enum: ["Invoiced", "Partially invoiced", "Not invoiced", "Pending guidance"],
       default: "Not invoiced",
     },
     isDelete: {

@@ -19,12 +19,16 @@ export interface DiskContainers {
   disk: IPalletSingle[];
 }
 export interface IPalletSingle {
+  packingId?: string;
   palletDescription: string;
+  arrivalStatus?: string;
+  arrivedAt?: Date;
   pallets: IPalletsDetails[];
   calcPallet: IPalletsCalc;
 }
 
 export interface IPalletsDetails {
+  lineId?: string;
   inventoryId?: string;
   inventoryMiamiInvoiceNumber?: string;
   model: string;
@@ -32,6 +36,8 @@ export interface IPalletsDetails {
   descriptionModel: string;
   unitPrice: number;
   quantityUnit: number;
+  arrivedQuantity?: number;
+  invoicedQuantity?: number;
   totalUnitPrice: number;
 }
 
@@ -61,6 +67,7 @@ export interface IPalletNew {
   pallet: {
     palletDescription: string;
     pallets: {
+      lineId?: string;
       inventoryId?: string;
       inventoryMiamiInvoiceNumber?: string;
       model: string;
@@ -68,6 +75,8 @@ export interface IPalletNew {
       descriptionModel: string;
       unitPrice: number;
       quantityUnit: number;
+      arrivedQuantity?: number;
+      invoicedQuantity?: number;
       totalUnitPrice: number
     }[];
     calcPallet: {
