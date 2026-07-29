@@ -40,7 +40,7 @@ const InventorySchema = new Schema<IInventoryTV>({
 });
 
 InventorySchema.index(
-  { client: 1, brandTV: 1, inchs: 1, model: 1 },
+  { client: 1, brandTV: 1, inchs: 1, model: 1, lastMiamiInvoiceNumber: 1 },
   { unique: true, partialFilterExpression: { isDisabled: false } },
 );
 

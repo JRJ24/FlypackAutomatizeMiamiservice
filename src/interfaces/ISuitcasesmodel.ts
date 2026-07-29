@@ -13,6 +13,8 @@ export interface ISuitCases {
 }
 
 export interface ISuitCasesData {
+  inventoryId?: string;
+  inventoryMiamiInvoiceNumber?: string;
   brandModel: string;
   inches: string;
   weightLB: number;
@@ -35,6 +37,8 @@ export interface ISuitCasesClientSend {
 }
 
 export interface ISuitCaseItem {
+  inventoryId?: string;
+  inventoryMiamiInvoiceNumber?: string;
   brandModel: string;
   inches: string;
   weightLB: number;

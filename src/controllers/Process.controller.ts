@@ -172,7 +172,7 @@ const deleteProcess = async (req: Request, res: Response) => {
     const deleted = await ProcessModel.findByIdAndUpdate(
       _id,
       { isDelete: true, isActive: false },
-      { new: true },
+      { returnDocument: "after", runValidators: true },
     );
 
     if (!deleted) {

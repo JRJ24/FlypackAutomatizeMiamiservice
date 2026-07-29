@@ -2,6 +2,15 @@ import type { ISuitCases, ISuitCasesData } from "@/interfaces/ISuitcasesmodel";
 import { model, Schema } from "mongoose";
 
 const DataSuitCasesSchema = new Schema<ISuitCasesData>({
+  inventoryId: {
+    type: Schema.Types.ObjectId,
+    ref: "Inventory",
+    required: false,
+  },
+  inventoryMiamiInvoiceNumber: {
+    type: String,
+    required: false,
+  },
   brandModel: {
     type: String,
     required: true,

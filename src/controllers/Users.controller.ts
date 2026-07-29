@@ -122,7 +122,10 @@ const updatePutUser = async (req: Request, res: Response) => {
       data.password = await hashPassword(data.password);
     }
 
-    const update = await UsersModel.findByIdAndUpdate(_id, data, { new: true });
+    const update = await UsersModel.findByIdAndUpdate(_id, data, {
+      returnDocument: "after",
+      runValidators: true,
+    });
 
     if (!update) {
       return res.status(404).json({
@@ -203,7 +206,7 @@ const disableUser = async (req: Request, res: Response) => {
     const disabled = await UsersModel.findByIdAndUpdate(
       _id,
       [{ $set: { isActive: { $not: "$isActive" } } }],
-      { new: true, updatePipeline: true },
+      { returnDocument: "after", runValidators: true, updatePipeline: true },
     );
 
     if (!disabled) {
@@ -248,7 +251,7 @@ const deletedUser = async (req: Request, res: Response) => {
     const deleted = await UsersModel.findByIdAndUpdate(
       _id,
       { isDelete: true },
-      { new: true },
+      { returnDocument: "after", runValidators: true },
     );
 
     if (!deleted) {

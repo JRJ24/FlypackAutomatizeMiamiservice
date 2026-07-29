@@ -25,6 +25,8 @@ export interface IPalletSingle {
 }
 
 export interface IPalletsDetails {
+  inventoryId?: string;
+  inventoryMiamiInvoiceNumber?: string;
   model: string;
   inchs: string;
   descriptionModel: string;
@@ -59,6 +61,8 @@ export interface IPalletNew {
   pallet: {
     palletDescription: string;
     pallets: {
+      inventoryId?: string;
+      inventoryMiamiInvoiceNumber?: string;
       model: string;
       inchs: string;
       descriptionModel: string;

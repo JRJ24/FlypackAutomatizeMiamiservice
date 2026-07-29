@@ -76,6 +76,12 @@ const createSuitCases = async (req: Request, res: Response) => {
     }
 
     const processedSuitCases: ISuitCasesData[] = [];
+    const inventoryExits: {
+      inventoryId: any;
+      quantity: number;
+      previousQuantity: number;
+      resultingQuantity: number;
+    }[] = [];
 
     for (const item of data.items) {
       const quantity = Number(item.quantity);
@@ -143,7 +149,62 @@ const createSuitCases = async (req: Request, res: Response) => {
         });
       }
 
+      const inventoryItem = await findInventoryItemForClient({
+        inventoryId: item.inventoryId,
+        clientName,
+        brandTV: item.brandModel,
+        inchs: item.inches,
+        model: item.modelDescription,
+        minQuantity: quantity,
+        session,
+      });
+
+      if (!inventoryItem) {
+        await session.abortTransaction();
+        return res.status(409).json({
+          ok: false,
+          message: "Insufficient inventory or inventory not found",
+          mensaje: "Inventario insuficiente o no encontrado",
+          data: item,
+        });
+      }
+
+      const inventoryUpdated = await InventoryModel.findOneAndUpdate(
+        {
+          _id: inventoryItem._id,
+          isDisabled: false,
+          quantity: { $gte: quantity },
+        },
+        {
+          $inc: { quantity: -quantity },
+        },
+        {
+          returnDocument: "after",
+          runValidators: true,
+          session,
+        },
+      );
+
+      if (!inventoryUpdated) {
+        await session.abortTransaction();
+        return res.status(409).json({
+          ok: false,
+          message: "Insufficient inventory or inventory not found",
+          mensaje: "Inventario insuficiente o no encontrado",
+          data: item,
+        });
+      }
+
+      inventoryExits.push({
+        inventoryId: inventoryUpdated._id,
+        quantity,
+        previousQuantity: Number(inventoryUpdated.quantity) + quantity,
+        resultingQuantity: Number(inventoryUpdated.quantity),
+      });
+
       processedSuitCases.push({
+        inventoryId: String(inventoryUpdated._id),
+        inventoryMiamiInvoiceNumber: inventoryUpdated.lastMiamiInvoiceNumber,
         brandModel: item.brandModel,
         inches: item.inches,
         modelDescription: item.modelDescription,
@@ -192,67 +253,17 @@ const createSuitCases = async (req: Request, res: Response) => {
       suitCases = created[0];
     }
 
-    // Reducir inventario SOLO después de guardar la valija
-    for (const item of data.items) {
-      const quantity = Number(item.quantity);
-
-      const inventoryItem = await findInventoryItemForClient({
-        clientName,
-        brandTV: item.brandModel,
-        inchs: item.inches,
-        model: item.modelDescription,
-        minQuantity: quantity,
-        session,
-      });
-
-      if (!inventoryItem) {
-        await session.abortTransaction();
-        return res.status(400).json({
-          ok: false,
-          message: "Insufficient inventory or inventory not found",
-          mensaje: "Inventario insuficiente o no encontrado",
-          data: item,
-        });
-      }
-
-      const inventoryUpdated = await InventoryModel.findByIdAndUpdate(
-        inventoryItem._id,
-        {
-          $inc: { quantity: -quantity },
-        },
-        {
-          new: true,
-          session,
-        },
-      );
-
-      if (!inventoryUpdated) {
-        await session.abortTransaction();
-        return res.status(400).json({
-          ok: false,
-          message: "Insufficient inventory or inventory not found",
-          mensaje: "Inventario insuficiente o no encontrado",
-          data: item,
-        });
-      }
-
-      await InventoryMovementModel.create(
-        [
-          {
-            inventoryId: inventoryUpdated._id,
-            type: "EXIT",
-            quantity,
-            previousQuantity: Number(inventoryUpdated.quantity) + quantity,
-            resultingQuantity: Number(inventoryUpdated.quantity),
-            miamiInvoiceNumber: normalizedMiamiInvoiceNumber,
-            referenceType: "SUITCASE",
-            referenceId: String(suitCases._id),
-            createdBy: (req as any).user?._id,
-          },
-        ],
-        { session },
-      );
-    }
+    await InventoryMovementModel.create(
+      inventoryExits.map((movement) => ({
+        ...movement,
+        type: "EXIT",
+        miamiInvoiceNumber: normalizedMiamiInvoiceNumber,
+        referenceType: "SUITCASE",
+        referenceId: String(suitCases._id),
+        createdBy: (req as any).user?._id,
+      })),
+      { session },
+    );
 
     await session.commitTransaction();
 
@@ -264,7 +275,22 @@ const createSuitCases = async (req: Request, res: Response) => {
     });
   } catch (error) {
     await session.abortTransaction();
-    console.error(error, "Si soy yo el problema");
+    console.error("[CREATE SUITCASE ERROR]", {
+      message: (error as any).message,
+      name: (error as any).name,
+      code: (error as any).code,
+      stack: (error as any).stack,
+      body: req.body,
+    });
+
+    if ((error as any).code === 11000) {
+      return res.status(409).json({
+        ok: false,
+        message: "Duplicate suitcase",
+        mensaje: "Ya existe una maleta con esos datos",
+        fields: (error as any).keyValue,
+      });
+    }
 
     return res.status(500).json({
       ok: false,
@@ -542,7 +568,7 @@ const updateSuitInvoices = async (req: Request, res: Response) => {
         clientName: normalizeClientName(clientName),
         clientCode: await getClientCodeForName(clientName),
       },
-      { new: true },
+      { returnDocument: "after", runValidators: true },
     );
 
     if (!updatedPallet) {
@@ -609,10 +635,12 @@ const deleteSuitCases = async (req: Request, res: Response) => {
       if (!Number.isFinite(quantity) || quantity <= 0) continue;
 
       const inventoryItem = await findInventoryItemForClient({
+        inventoryId: item.inventoryId ? String(item.inventoryId) : undefined,
         clientName,
         brandTV: item.brandModel,
         model: item.modelDescription,
         inchs: item.inches,
+        miamiInvoiceNumber: item.inventoryMiamiInvoiceNumber,
         session,
       });
 
@@ -626,10 +654,10 @@ const deleteSuitCases = async (req: Request, res: Response) => {
         });
       }
 
-      const restoredInventory = await InventoryModel.findByIdAndUpdate(
-        inventoryItem._id,
+      const restoredInventory = await InventoryModel.findOneAndUpdate(
+        { _id: inventoryItem._id, isDisabled: false },
         { $inc: { quantity } },
-        { new: true, session },
+        { returnDocument: "after", runValidators: true, session },
       );
 
       if (!restoredInventory) {
@@ -661,7 +689,7 @@ const deleteSuitCases = async (req: Request, res: Response) => {
         isDelete: true,
         clientName,
       },
-      { new: true, session },
+      { returnDocument: "after", runValidators: true, session },
     );
 
     if (!deleteSuit) {
@@ -747,17 +775,19 @@ const deleteItemsSuitCases = async (req: Request, res: Response) => {
       }
 
       const inventoryItem = await findInventoryItemForClient({
+        inventoryId: itemDeleted.inventoryId ? String(itemDeleted.inventoryId) : undefined,
         clientName: normalizeClientName(docSuitcases.clientName),
         brandTV: itemDeleted.brandModel,
         model: itemDeleted.modelDescription,
         inchs: itemDeleted.inches,
+        miamiInvoiceNumber: itemDeleted.inventoryMiamiInvoiceNumber,
       });
 
       const restoreInv = inventoryItem
-        ? await InventoryModel.findByIdAndUpdate(
-            inventoryItem._id,
+        ? await InventoryModel.findOneAndUpdate(
+            { _id: inventoryItem._id, isDisabled: false },
             { $inc: { quantity: itemDeleted.quantity } },
-            { new: true },
+            { returnDocument: "after", runValidators: true },
           )
         : null;
 
@@ -842,7 +872,7 @@ const updateSuitcaseArrivalStatus = async (req: Request, res: Response) => {
     const updatedSuitcase = await SuitcasesModel.findByIdAndUpdate(
       suitDoc._id,
       update,
-      { new: true },
+      { returnDocument: "after", runValidators: true },
     );
 
     if (!updatedSuitcase) {

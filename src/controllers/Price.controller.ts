@@ -138,7 +138,7 @@ const deletePrice = async (req: Request, res: Response) => {
       });
     }
 
-    const deleteOne = await PriceModel.deleteOne({ _id: _id }, { new: true });
+    const deleteOne = await PriceModel.deleteOne({ _id: _id });
 
     if (!deleteOne) {
       return res.status(404).json({

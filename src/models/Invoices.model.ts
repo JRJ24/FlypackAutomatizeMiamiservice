@@ -107,7 +107,8 @@ InvoicesSchema.pre("save", async function () {
       { id: "invoice_counter", year: currentYear },
       { $inc: { seq: 1 } },
       {
-        new: true,
+        returnDocument: "after",
+        runValidators: true,
         upsert: true,
         setDefaultsOnInsert: true,
       },

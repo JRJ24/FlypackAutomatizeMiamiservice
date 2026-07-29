@@ -116,7 +116,7 @@ const createAccounts = async (req: Request, res: Response) => {
         $inc: { totalAmount: amount },
         $set: { lastUpdate: new Date() },
       },
-      { upsert: true, new: true },
+      { upsert: true, returnDocument: "after", runValidators: true },
     );
 
     if (!updatedTotal) {
@@ -230,7 +230,7 @@ const updateAmountBank = async (req: Request, res: Response) => {
     const update = await AccountsAvailableModel.findOneAndUpdate(
       { bankAccountName: bankAccountName },
       { $inc: { amount: amount } },
-      { new: true },
+      { returnDocument: "after", runValidators: true },
     );
 
     if (!update) {
@@ -313,7 +313,7 @@ const debitAccount = async (req: Request, res: Response) => {
       const debitAccount = await AccountsAvailableModel.findOneAndUpdate(
         { bankAccountName: data.bankAccountName },
         { $inc: { amount: -data.amount } },
-        { new: true },
+        { returnDocument: "after", runValidators: true },
       );
 
       if (!debitAccount) {

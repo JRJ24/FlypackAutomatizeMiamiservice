@@ -14,8 +14,9 @@ const seedFutureCounters = async() => {
           $setOnInsert: { seq: 0 } // Solo pone seq: 0 si el documento NO existe
         },
         { 
-          upsert: true, 
-          new: true 
+          upsert: true,
+          returnDocument: "after",
+          runValidators: true,
         }
       );
       

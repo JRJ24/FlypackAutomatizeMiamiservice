@@ -14,6 +14,9 @@ const createInventory = async (req: Request, res: Response) => {
     const quantityNumber = Number(quantity);
     const normalizedMiamiInvoiceNumber = normalizeMiamiInvoiceNumber(miamiInvoiceNumber);
     const normalizedClient = normalizeClientName(otherData.client);
+    const brandTV = String(otherData.brandTV || "").trim();
+    const inchs = String(otherData.inchs || "").trim();
+    const modelValue = String(otherData.model || "").trim();
     const clientCode = await getClientCodeForName(normalizedClient);
 
     if (!Number.isFinite(quantityNumber) || quantityNumber <= 0) {
@@ -34,13 +37,33 @@ const createInventory = async (req: Request, res: Response) => {
       });
     }
 
-    const modelUpper = otherData.model.toUpperCase();
-    const inventoryIdentity = {
-      brandTV: otherData.brandTV,
-      inchs: otherData.inchs,
+    if (!brandTV || !inchs || !modelValue) {
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid inventory identity",
+        mensaje: "Producto, pulgadas y modelo son obligatorios",
+        data: null,
+      });
+    }
+
+    const modelUpper = modelValue.toUpperCase();
+    const inventoryIdentity: Record<string, any> = {
+      brandTV,
+      inchs,
       model: modelUpper,
       isDisabled: false,
     };
+
+    if (normalizedMiamiInvoiceNumber) {
+      inventoryIdentity.lastMiamiInvoiceNumber = normalizedMiamiInvoiceNumber;
+    } else {
+      inventoryIdentity.$or = [
+        { lastMiamiInvoiceNumber: { $exists: false } },
+        { lastMiamiInvoiceNumber: null },
+        { lastMiamiInvoiceNumber: "" },
+      ];
+    }
+
     const matchingInventories = await InventoryModel.find(inventoryIdentity);
     const previousInventory = matchingInventories.find(
       (inventory) => normalizeClientName(inventory.client) === normalizedClient,
@@ -49,6 +72,8 @@ const createInventory = async (req: Request, res: Response) => {
 
     const inventoryPayload = {
       ...otherData,
+      brandTV,
+      inchs,
       client: normalizedClient,
       ...(clientCode ? { clientCode } : {}),
       model: modelUpper,
@@ -64,7 +89,7 @@ const createInventory = async (req: Request, res: Response) => {
             $inc: { quantity: quantityNumber },
             $set: inventoryPayload,
           },
-          { new: true },
+          { returnDocument: "after", runValidators: true },
         )
       : await InventoryModel.create({
           ...inventoryPayload,
@@ -99,7 +124,23 @@ const createInventory = async (req: Request, res: Response) => {
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("[CREATE INVENTORY ERROR]", {
+      message: (error as any).message,
+      name: (error as any).name,
+      code: (error as any).code,
+      stack: (error as any).stack,
+      body: req.body,
+    });
+
+    if ((error as any).code === 11000) {
+      return res.status(409).json({
+        ok: false,
+        message: "Duplicate inventory",
+        mensaje: "Ya existe un inventario con esos datos",
+        fields: (error as any).keyValue,
+      });
+    }
+
     return res.status(500).json({ ok: false, message: "Error en el servidor" });
   }
 };
@@ -183,6 +224,8 @@ const getInventoryClient = async (req: Request, res: Response) => {
 
 const getQuantityOfClient = async (req: Request, res: Response) => {
   try {
+    console.log("[INVENTORY QUANTITY] Body:", req.body);
+
     const { clientName, brandTV, inches } = req.body;
     const normalizedClient = normalizeClientName(clientName);
 
@@ -196,14 +239,33 @@ const getQuantityOfClient = async (req: Request, res: Response) => {
       inchs: inches,
       isDisabled: false,
       quantity: { $gt: 0 } // Opcional: solo traer los que tienen stock
-    }).select({ brandTV: 1, quantity: 1, model: 1, client: 1 });
+    }).select({ brandTV: 1, quantity: 1, model: 1, client: 1, lastMiamiInvoiceNumber: 1 });
 
     const clientItems = items
       .filter((item) => normalizeClientName(item.client) === normalizedClient)
       .map(serializeInventory);
 
+    console.log(
+      "[INVENTORY QUANTITY] Found:",
+      clientItems.map((item) => ({
+        _id: item._id,
+        model: item.model,
+        quantity: item.quantity,
+        lastMiamiInvoiceNumber: item.lastMiamiInvoiceNumber,
+      })),
+    );
+
     if (!clientItems || clientItems.length === 0) {
-      return res.status(404).json({ ok: false, mensaje: "No hay stock disponible", data: [] });
+      return res.status(404).json({
+        ok: false,
+        mensaje: "No hay stock disponible",
+        data: [],
+        search: {
+          clientName,
+          brandTV,
+          inches,
+        },
+      });
     }
 
     return res.status(200).json({
@@ -212,6 +274,14 @@ const getQuantityOfClient = async (req: Request, res: Response) => {
       data: clientItems, // Ahora enviamos un Array
     });
   } catch (error) {
+    console.error("[INVENTORY QUANTITY ERROR]", {
+      message: (error as any).message,
+      name: (error as any).name,
+      code: (error as any).code,
+      stack: (error as any).stack,
+      body: req.body,
+    });
+
     return res.status(500).json({ ok: false, mensaje: "Error de servidor" });
   }
 };
@@ -264,8 +334,13 @@ const UpdateQtyInventory = async (req: Request, res: Response) => {
       data.clientCode = await getClientCodeForName(data.client);
     }
 
+    if (data.brandTV) data.brandTV = String(data.brandTV).trim();
+    if (data.inchs) data.inchs = String(data.inchs).trim();
+    if (data.model) data.model = String(data.model).trim().toUpperCase();
+
     const inventory = await InventoryModel.findByIdAndUpdate(_id, data, {
-      new: true,
+      returnDocument: "after",
+      runValidators: true,
     });
 
     if (!inventory) {
@@ -298,6 +373,23 @@ const UpdateQtyInventory = async (req: Request, res: Response) => {
       data: serializeInventory(inventory),
     });
   } catch (error) {
+    console.error("[UPDATE INVENTORY ERROR]", {
+      message: (error as any).message,
+      name: (error as any).name,
+      code: (error as any).code,
+      stack: (error as any).stack,
+      body: req.body,
+    });
+
+    if ((error as any).code === 11000) {
+      return res.status(409).json({
+        ok: false,
+        message: "Duplicate inventory",
+        mensaje: "Ya existe un inventario con esos datos",
+        fields: (error as any).keyValue,
+      });
+    }
+
     return res.status(500).json({
       ok: false,
       message: "ERROR INTERNAL SERVER",
@@ -311,9 +403,16 @@ const deleteInventory = async (req: Request, res: Response) => {
   try {
     const { _id } = req.params;
 
-    const inventory = await InventoryModel.findByIdAndUpdate(_id, {
-      isDisabled: true,
-    });
+    const inventory = await InventoryModel.findByIdAndUpdate(
+      _id,
+      {
+        isDisabled: true,
+      },
+      {
+        returnDocument: "after",
+        runValidators: true,
+      },
+    );
 
     if (!inventory) {
       return res.status(400).json({
@@ -331,6 +430,23 @@ const deleteInventory = async (req: Request, res: Response) => {
       data: serializeInventory(inventory),
     });
   } catch (error) {
+    console.error("[UPDATE INVENTORY ERROR]", {
+      message: (error as any).message,
+      name: (error as any).name,
+      code: (error as any).code,
+      stack: (error as any).stack,
+      body: req.body,
+    });
+
+    if ((error as any).code === 11000) {
+      return res.status(409).json({
+        ok: false,
+        message: "Duplicate inventory",
+        mensaje: "Ya existe un inventario con esos datos",
+        fields: (error as any).keyValue,
+      });
+    }
+
     return res.status(500).json({
       ok: false,
       message: "ERROR INTERNAL SERVER",

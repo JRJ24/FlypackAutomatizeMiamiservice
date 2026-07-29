@@ -8,6 +8,15 @@ import {
 
 const PalletsDetailsSchema = new Schema<IPalletsDetails>(
   {
+    inventoryId: {
+      type: Schema.Types.ObjectId,
+      ref: "Inventory",
+      required: false,
+    },
+    inventoryMiamiInvoiceNumber: {
+      type: String,
+      required: false,
+    },
     model: {
       type: String,
       required: true,

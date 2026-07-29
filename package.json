@@ -9,7 +9,8 @@
     "start": "node ./dist/src/App.js",
     "build": "tsc && tsc-alias",
     "clean": "rimraf ./dist && mkdir dist",
-    "db:seed": "ts-node src/database/seed.ts"
+    "db:seed": "ts-node src/database/seed.ts",
+    "db:migrate:inventory-indexes": "ts-node src/database/migrateInventoryIndexes.ts"
   },
   "keywords": [],
   "author": "",

@@ -452,6 +452,7 @@ const createPallets = async (req: Request, res: Response) => {
       const totalUnitPrice = unitPrice * quantityUnit;
 
       const inventoryItem = await findInventoryItemForClient({
+        inventoryId: item.inventoryId,
         clientName,
         brandTV: item.model,
         inchs: item.inchs,
@@ -462,7 +463,7 @@ const createPallets = async (req: Request, res: Response) => {
 
       if (!inventoryItem) {
         await session.abortTransaction();
-        return res.status(400).json({
+        return res.status(409).json({
           ok: false,
           message: "Insufficient inventory or inventory not found",
           mensaje: "Inventario insuficiente o no encontrado",
@@ -470,15 +471,19 @@ const createPallets = async (req: Request, res: Response) => {
         });
       }
 
-      const UpdateQtyInventory = await InventoryModel.findByIdAndUpdate(
-        inventoryItem._id,
+      const UpdateQtyInventory = await InventoryModel.findOneAndUpdate(
+        {
+          _id: inventoryItem._id,
+          isDisabled: false,
+          quantity: { $gte: quantityUnit },
+        },
         { $inc: { quantity: -quantityUnit } },
-        { new: true, session },
+        { returnDocument: "after", runValidators: true, session },
       );
 
       if (!UpdateQtyInventory) {
         await session.abortTransaction();
-        return res.status(400).json({
+        return res.status(409).json({
           ok: false,
           message: "Insufficient inventory or inventory not found",
           mensaje: "Inventario insuficiente o no encontrado",
@@ -496,6 +501,8 @@ const createPallets = async (req: Request, res: Response) => {
       globalTotalPrice += totalUnitPrice;
 
       enrichedPallets.push({
+        inventoryId: String(UpdateQtyInventory._id),
+        inventoryMiamiInvoiceNumber: UpdateQtyInventory.lastMiamiInvoiceNumber,
         model: item.model,
         inchs: item.inchs,
         descriptionModel: item.descriptionModel,
@@ -574,7 +581,7 @@ const createPallets = async (req: Request, res: Response) => {
             },
             $push: { pallet: newPalletSingle },
           },
-          { new: true, session },
+          { returnDocument: "after", runValidators: true, session },
         )
       : (await PalletsModel.create(
           [
@@ -625,6 +632,23 @@ const createPallets = async (req: Request, res: Response) => {
     });
   } catch (error) {
     await session.abortTransaction();
+    console.error("[CREATE PALLET ERROR]", {
+      message: (error as any).message,
+      name: (error as any).name,
+      code: (error as any).code,
+      stack: (error as any).stack,
+      body: req.body,
+    });
+
+    if ((error as any).code === 11000) {
+      return res.status(409).json({
+        ok: false,
+        message: "Duplicate pallet",
+        mensaje: "Ya existe un pallet con esos datos",
+        fields: (error as any).keyValue,
+      });
+    }
+
     return res.status(500).json({
       ok: false,
       message: "Error internal server",
@@ -699,7 +723,7 @@ const updatePalletsInvoices = async (req: Request, res: Response) => {
         clientName: normalizeClientName(clientName),
         clientCode: await getClientCodeForName(clientName),
       },
-      { new: true },
+      { returnDocument: "after", runValidators: true },
     );
 
     if (!updatedPallet) {
@@ -767,10 +791,12 @@ const deletePallets = async (req: Request, res: Response) => {
         if (!Number.isFinite(quantityUnit) || quantityUnit <= 0) continue;
 
         const inventoryItem = await findInventoryItemForClient({
+          inventoryId: item.inventoryId ? String(item.inventoryId) : undefined,
           clientName: normalizedClient,
           brandTV: item.model,
           inchs: item.inchs,
           model: item.descriptionModel,
+          miamiInvoiceNumber: item.inventoryMiamiInvoiceNumber,
           session,
         });
 
@@ -784,10 +810,10 @@ const deletePallets = async (req: Request, res: Response) => {
           });
         }
 
-        const restoredInventory = await InventoryModel.findByIdAndUpdate(
-          inventoryItem._id,
+        const restoredInventory = await InventoryModel.findOneAndUpdate(
+          { _id: inventoryItem._id, isDisabled: false },
           { $inc: { quantity: quantityUnit } },
-          { new: true, session },
+          { returnDocument: "after", runValidators: true, session },
         );
 
         if (!restoredInventory) {
@@ -817,7 +843,7 @@ const deletePallets = async (req: Request, res: Response) => {
     const deletedPallet = await PalletsModel.findByIdAndUpdate(
       palletDoc._id,
       { isDelete: true, isActive: false, clientName: normalizedClient },
-      { new: true, session },
+      { returnDocument: "after", runValidators: true, session },
     );
 
     if (!deletedPallet) {
@@ -902,17 +928,19 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
         });
       }
       const inventoryItem = await findInventoryItemForClient({
+        inventoryId: itemDeleted.inventoryId ? String(itemDeleted.inventoryId) : undefined,
         clientName: normalizeClientName(docPallet.clientName),
         brandTV: itemDeleted.model,
         model: itemDeleted.descriptionModel,
         inchs: itemDeleted.inchs,
+        miamiInvoiceNumber: itemDeleted.inventoryMiamiInvoiceNumber,
       });
 
       const restoreInv = inventoryItem
-        ? await InventoryModel.findByIdAndUpdate(
-            inventoryItem._id,
+        ? await InventoryModel.findOneAndUpdate(
+            { _id: inventoryItem._id, isDisabled: false },
             { $inc: { quantity: itemDeleted.quantityUnit } },
-            { new: true },
+            { returnDocument: "after", runValidators: true },
           )
         : null;
 
@@ -979,7 +1007,7 @@ const updateGuide = async (req: Request, res: Response) => {
     const update = await PalletsModel.findByIdAndUpdate(
       _id,
       { motherGuide: motherGuide, status: "Not invoiced" },
-      { new: true },
+      { returnDocument: "after", runValidators: true },
     );
 
     if (!update) {
@@ -1047,7 +1075,7 @@ const updatePalletArrivalStatus = async (req: Request, res: Response) => {
     const updatedPallet = await PalletsModel.findByIdAndUpdate(
       palletDoc._id,
       update,
-      { new: true },
+      { returnDocument: "after", runValidators: true },
     );
 
     if (!updatedPallet) {
