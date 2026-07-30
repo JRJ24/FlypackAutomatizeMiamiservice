@@ -10,12 +10,21 @@ import MaintenanceCostModel from "./../models/MaintenanceCost.model";
 import { CalcSuitCases } from "./../helpers/calcSuitCases";
 import InventoryModel from "./../models/Inventory.model";
 import InventoryMovementModel from "../models/InventoryMovement.model";
+import InvoicesModel from "../models/Invoices.model";
 import { normalizeMiamiInvoiceNumber } from "../helpers/miamiInvoiceNumber";
 import { normalizeClientName, withDecryptedClientFields } from "../helpers/clientName";
 import { getClientCodeForName } from "../helpers/clientIdentity";
 import { findInventoryItemForClient } from "../helpers/inventoryLink";
+import { syncInvoicesForPacking } from "../helpers/syncInvoices";
 
 const serializeSuitcase = (suitcase: any) => withDecryptedClientFields(suitcase);
+
+const toNumber = (value: unknown) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+};
+
+const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
 const includesText = (value: unknown, search: string) =>
   String(value || "").toLowerCase().includes(search.toLowerCase());
@@ -40,6 +49,14 @@ const findSuitcaseByClientAndGuide = async (clientName: string, motherGuide: str
   ) || null;
 };
 
+const getInvoiceTransportCost = async (clientName: string, motherGuide: string) => {
+  const normalizedClient = normalizeClientName(clientName);
+  const invoices = await InvoicesModel.find({ motherGuide, type: "LUGGAGES" }).sort({ date: -1, _id: -1 });
+  const invoice = invoices.find((item) => normalizeClientName(item.client) === normalizedClient);
+
+  return invoice?.costTransport;
+};
+
 const createSuitCases = async (req: Request, res: Response) => {
   const session = await SuitcasesModel.startSession();
 
@@ -52,6 +69,8 @@ const createSuitCases = async (req: Request, res: Response) => {
     const normalizedMiamiInvoiceNumber = normalizeMiamiInvoiceNumber(
       data.miamiInvoiceNumber,
     );
+    const hasCostTransport = data.costTransport !== undefined;
+    const costTransport = hasCostTransport ? Number(data.costTransport) : undefined;
 
     if (!clientName || !data?.items || !Array.isArray(data.items) || data.items.length === 0) {
       await session.abortTransaction();
@@ -59,6 +78,16 @@ const createSuitCases = async (req: Request, res: Response) => {
         ok: false,
         message: "No data or empty items array",
         mensaje: "No hay datos o el arreglo de maletas está vacío",
+        data: null,
+      });
+    }
+
+    if (costTransport !== undefined && (!Number.isFinite(costTransport) || costTransport < 0)) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid transport cost",
+        mensaje: "Costo de transporte invalido",
         data: null,
       });
     }
@@ -235,12 +264,16 @@ const createSuitCases = async (req: Request, res: Response) => {
       if (normalizedMiamiInvoiceNumber) {
         existingSuitCase.miamiInvoiceNumber = normalizedMiamiInvoiceNumber;
       }
+      if (costTransport !== undefined) {
+        existingSuitCase.costTransport = costTransport;
+      }
       existingSuitCase.suitCases.push(...processedSuitCases);
       suitCases = await existingSuitCase.save({ session });
     } else {
       const payloadSuit: ISuitCases = {
         clientName,
         clientCode,
+        costTransport: costTransport ?? 0,
         motherGuide: data.motherGuide,
         miamiInvoiceNumber: normalizedMiamiInvoiceNumber,
         dateArrive: data.dateArrive,
@@ -264,6 +297,12 @@ const createSuitCases = async (req: Request, res: Response) => {
       })),
       { session },
     );
+
+    await syncInvoicesForPacking({
+      type: "LUGGAGES",
+      currentDoc: suitCases,
+      session,
+    });
 
     await session.commitTransaction();
 
@@ -506,9 +545,18 @@ const getTotalSuits = async (req: Request, res: Response) => {
       });
     }
 
+    const invoiceTransportCost = await getInvoiceTransportCost(
+      String(clientName),
+      String(motherGuide),
+    );
+    const costTransport = toNumber(suitDoc.costTransport ?? invoiceTransportCost);
+
     return res.status(200).json({
       ok: true,
-      data: result[0], // Retornamos el primer objeto con los totales
+      data: {
+        ...result[0],
+        costTransport,
+      }, // Retornamos el primer objeto con los totales
     });
   } catch (error) {
     return res.status(500).json({
@@ -520,20 +568,384 @@ const getTotalSuits = async (req: Request, res: Response) => {
 };
 
 const updateSuitCases = async (req: Request, res: Response) => {
+  const session = await SuitcasesModel.startSession();
+
   try {
-    return res.status(501).json({
-      ok: false,
-      message: "Not implemented",
-      mensaje: "No implementado",
-      data: null,
+    session.startTransaction();
+
+    const { _id, clientName, motherGuide, miamiInvoiceNumber, dateArrive, items, costTransport } = req.body;
+    const normalizedClient = normalizeClientName(clientName);
+    const hasCostTransport = costTransport !== undefined;
+    const nextCostTransport = hasCostTransport ? Number(costTransport) : undefined;
+
+    if (!_id && (!normalizedClient || !motherGuide)) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        ok: false,
+        message: "Missing suitcase data",
+        mensaje: "Faltan datos de la maleta",
+        data: null,
+      });
+    }
+
+    const suitDoc = _id
+      ? await SuitcasesModel.findById(_id).session(session)
+      : (await SuitcasesModel.find({ motherGuide, isDelete: false }).session(session)).find(
+          (suitcase) => normalizeClientName(suitcase.clientName) === normalizedClient,
+        );
+
+    if (!suitDoc || suitDoc.isDelete) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        ok: false,
+        message: "Suitcase not found",
+        mensaje: "Maleta no encontrada",
+        data: null,
+      });
+    }
+
+    const previousClientName = suitDoc.clientName;
+    const previousMotherGuide = suitDoc.motherGuide;
+    const nextClientName = normalizedClient || normalizeClientName(suitDoc.clientName);
+
+    if (
+      nextCostTransport !== undefined &&
+      (!Number.isFinite(nextCostTransport) || nextCostTransport < 0)
+    ) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid transport cost",
+        mensaje: "Costo de transporte invalido",
+        data: null,
+      });
+    }
+
+    if (nextClientName) {
+      suitDoc.clientName = nextClientName;
+      suitDoc.clientCode = await getClientCodeForName(nextClientName);
+    }
+
+    if (motherGuide) suitDoc.motherGuide = motherGuide;
+    if (dateArrive) suitDoc.dateArrive = dateArrive;
+    if (nextCostTransport !== undefined) suitDoc.costTransport = roundMoney(nextCostTransport);
+
+    const normalizedMiamiInvoiceNumber = normalizeMiamiInvoiceNumber(miamiInvoiceNumber);
+    if (normalizedMiamiInvoiceNumber) {
+      suitDoc.miamiInvoiceNumber = normalizedMiamiInvoiceNumber;
+    }
+
+    if (Array.isArray(items)) {
+      const maintenance = await MaintenanceCostModel.findOne().session(session);
+
+      if (!maintenance) {
+        await session.abortTransaction();
+        return res.status(404).json({
+          ok: false,
+          message: "Maintenance cost not found",
+          mensaje: "Costo de mantenimiento no encontrado",
+          data: null,
+        });
+      }
+
+      for (const itemUpdate of items) {
+        const itemIndex = Number(itemUpdate.indexItem ?? itemUpdate.itemIndex);
+
+        if (!Number.isInteger(itemIndex) || itemIndex < 0 || !suitDoc.suitCases[itemIndex]) {
+          await session.abortTransaction();
+          return res.status(404).json({
+            ok: false,
+            message: "Suitcase item not found",
+            mensaje: "Item de maleta no encontrado",
+            data: itemUpdate,
+          });
+        }
+
+        const currentItem: any = suitDoc.suitCases[itemIndex];
+        const oldQuantity = Number(currentItem.quantity);
+        const nextQuantity = Number(itemUpdate.quantity ?? currentItem.quantity);
+        const currentWeightPerUnit = oldQuantity > 0
+          ? toNumber(currentItem.weightLB) / oldQuantity
+          : toNumber(currentItem.weightLB);
+        const nextWeightLB = Number(itemUpdate.weightLB ?? currentWeightPerUnit);
+
+        if (
+          !Number.isFinite(nextQuantity) ||
+          nextQuantity <= 0 ||
+          !Number.isFinite(nextWeightLB) ||
+          nextWeightLB <= 0
+        ) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            ok: false,
+            message: "Invalid suitcase item data",
+            mensaje: "Datos de item de maleta invalidos",
+            data: itemUpdate,
+          });
+        }
+
+        const nextBrandModel = typeof itemUpdate.brandModel === "string" && itemUpdate.brandModel.trim()
+          ? itemUpdate.brandModel.trim()
+          : currentItem.brandModel;
+        const nextInches = typeof itemUpdate.inches === "string" && itemUpdate.inches.trim()
+          ? itemUpdate.inches.trim()
+          : currentItem.inches;
+        const nextModelDescription = typeof itemUpdate.modelDescription === "string"
+          ? itemUpdate.modelDescription.trim()
+          : currentItem.modelDescription;
+        const isSpecial = nextClientName === "Daniel";
+        const priceBrand = await PriceModel.findOne({
+          model: nextBrandModel,
+          inches: nextInches,
+          isSpecial,
+        }).session(session);
+        const fallbackUnitPrice = oldQuantity > 0
+          ? toNumber(currentItem.totalUnitPrice) / oldQuantity
+          : 0;
+        const unitPrice = priceBrand && Number.isFinite(Number(priceBrand.unitPrice))
+          ? Number(priceBrand.unitPrice)
+          : fallbackUnitPrice;
+        const quantityDelta = nextQuantity - oldQuantity;
+        const inventoryIdentityChanged =
+          String(nextBrandModel) !== String(currentItem.brandModel) ||
+          String(nextInches) !== String(currentItem.inches) ||
+          String(nextModelDescription) !== String(currentItem.modelDescription);
+
+        if (inventoryIdentityChanged) {
+          const oldInventoryItem = await findInventoryItemForClient({
+            inventoryId: currentItem.inventoryId ? String(currentItem.inventoryId) : undefined,
+            clientName: nextClientName,
+            brandTV: currentItem.brandModel,
+            model: currentItem.modelDescription,
+            inchs: currentItem.inches,
+            miamiInvoiceNumber: currentItem.inventoryMiamiInvoiceNumber,
+            session,
+          });
+
+          if (!oldInventoryItem) {
+            await session.abortTransaction();
+            return res.status(400).json({
+              ok: false,
+              message: "Original inventory item not found",
+              mensaje: "Item original de inventario no encontrado",
+              data: itemUpdate,
+            });
+          }
+
+          const restoredInventory = await InventoryModel.findOneAndUpdate(
+            { _id: oldInventoryItem._id, isDisabled: false },
+            { $inc: { quantity: oldQuantity } },
+            { returnDocument: "after", runValidators: true, session },
+          );
+
+          if (!restoredInventory) {
+            await session.abortTransaction();
+            return res.status(400).json({
+              ok: false,
+              message: "Original inventory could not be restored",
+              mensaje: "No se pudo restaurar inventario original",
+              data: itemUpdate,
+            });
+          }
+
+          await InventoryMovementModel.create(
+            [
+              {
+                inventoryId: restoredInventory._id,
+                type: "ADJUSTMENT",
+                quantity: oldQuantity,
+                previousQuantity: Number(restoredInventory.quantity) - oldQuantity,
+                resultingQuantity: Number(restoredInventory.quantity),
+                miamiInvoiceNumber: suitDoc.miamiInvoiceNumber,
+                referenceType: "SUITCASE_ITEM_UPDATE_RESTORE",
+                referenceId: String(suitDoc._id),
+                createdBy: (req as any).user?._id,
+              },
+            ],
+            { session },
+          );
+
+          const nextInventoryItem = await findInventoryItemForClient({
+            clientName: nextClientName,
+            brandTV: nextBrandModel,
+            model: nextModelDescription,
+            inchs: nextInches,
+            minQuantity: nextQuantity,
+            session,
+          });
+
+          if (!nextInventoryItem) {
+            await session.abortTransaction();
+            return res.status(409).json({
+              ok: false,
+              message: "Insufficient inventory for updated item",
+              mensaje: "Inventario insuficiente para el item actualizado",
+              data: itemUpdate,
+            });
+          }
+
+          const updatedNextInventory = await InventoryModel.findOneAndUpdate(
+            {
+              _id: nextInventoryItem._id,
+              isDisabled: false,
+              quantity: { $gte: nextQuantity },
+            },
+            { $inc: { quantity: -nextQuantity } },
+            { returnDocument: "after", runValidators: true, session },
+          );
+
+          if (!updatedNextInventory) {
+            await session.abortTransaction();
+            return res.status(409).json({
+              ok: false,
+              message: "Insufficient inventory for updated item",
+              mensaje: "Inventario insuficiente para el item actualizado",
+              data: itemUpdate,
+            });
+          }
+
+          currentItem.inventoryId = String(updatedNextInventory._id);
+          currentItem.inventoryMiamiInvoiceNumber = updatedNextInventory.lastMiamiInvoiceNumber;
+
+          await InventoryMovementModel.create(
+            [
+              {
+                inventoryId: updatedNextInventory._id,
+                type: "ADJUSTMENT",
+                quantity: nextQuantity,
+                previousQuantity: Number(updatedNextInventory.quantity) + nextQuantity,
+                resultingQuantity: Number(updatedNextInventory.quantity),
+                miamiInvoiceNumber: suitDoc.miamiInvoiceNumber,
+                referenceType: "SUITCASE_ITEM_UPDATE_EXIT",
+                referenceId: String(suitDoc._id),
+                createdBy: (req as any).user?._id,
+              },
+            ],
+            { session },
+          );
+        } else if (quantityDelta !== 0) {
+          const inventoryItem = await findInventoryItemForClient({
+            inventoryId: currentItem.inventoryId ? String(currentItem.inventoryId) : undefined,
+            clientName: nextClientName,
+            brandTV: currentItem.brandModel,
+            model: currentItem.modelDescription,
+            inchs: currentItem.inches,
+            miamiInvoiceNumber: currentItem.inventoryMiamiInvoiceNumber,
+            session,
+          });
+
+          if (!inventoryItem) {
+            await session.abortTransaction();
+            return res.status(400).json({
+              ok: false,
+              message: "Inventory item not found",
+              mensaje: "Item de inventario no encontrado",
+              data: itemUpdate,
+            });
+          }
+
+          if (quantityDelta > 0 && Number(inventoryItem.quantity) < quantityDelta) {
+            await session.abortTransaction();
+            return res.status(409).json({
+              ok: false,
+              message: "Insufficient inventory",
+              mensaje: "Inventario insuficiente",
+              data: itemUpdate,
+            });
+          }
+
+          const updatedInventory = await InventoryModel.findOneAndUpdate(
+            { _id: inventoryItem._id, isDisabled: false },
+            { $inc: { quantity: -quantityDelta } },
+            { returnDocument: "after", runValidators: true, session },
+          );
+
+          if (!updatedInventory) {
+            await session.abortTransaction();
+            return res.status(400).json({
+              ok: false,
+              message: "Inventory could not be updated",
+              mensaje: "No se pudo actualizar inventario",
+              data: itemUpdate,
+            });
+          }
+
+          await InventoryMovementModel.create(
+            [
+              {
+                inventoryId: updatedInventory._id,
+                type: "ADJUSTMENT",
+                quantity: Math.abs(quantityDelta),
+                previousQuantity: Number(updatedInventory.quantity) + quantityDelta,
+                resultingQuantity: Number(updatedInventory.quantity),
+                miamiInvoiceNumber: suitDoc.miamiInvoiceNumber,
+                referenceType: "SUITCASE_ITEM_UPDATE",
+                referenceId: String(suitDoc._id),
+                createdBy: (req as any).user?._id,
+              },
+            ],
+            { session },
+          );
+        }
+
+        const recalculated = await CalcSuitCases(
+          nextWeightLB,
+          nextQuantity,
+          unitPrice,
+          maintenance,
+        );
+
+        currentItem.brandModel = nextBrandModel;
+        currentItem.inches = nextInches;
+        currentItem.modelDescription = nextModelDescription;
+        currentItem.weightLB = Number(recalculated.weightLB);
+        currentItem.quantity = Number(recalculated.quantity);
+        currentItem.totalFreight = Number(recalculated.totalFreight);
+        currentItem.totalRate = Number(recalculated.totalRate);
+        currentItem.totalCostVersat = Number(recalculated.totalCostVersat);
+        currentItem.totalUnitPrice = Number(recalculated.totalUnitPrice);
+        currentItem.totalUtility = Number(recalculated.totalUtility);
+      }
+
+      suitDoc.markModified("suitCases");
+    }
+
+    const savedSuitcase = await suitDoc.save({ session });
+
+    await syncInvoicesForPacking({
+      type: "LUGGAGES",
+      currentDoc: savedSuitcase,
+      previousClientName,
+      previousMotherGuide,
+      session,
+    });
+
+    await session.commitTransaction();
+
+    return res.status(200).json({
+      ok: true,
+      message: "Suitcase updated",
+      mensaje: "Maleta actualizada correctamente",
+      data: serializeSuitcase(savedSuitcase),
     });
   } catch (error) {
+    await session.abortTransaction();
+    console.error("[UPDATE SUITCASE ERROR]", {
+      message: (error as any).message,
+      name: (error as any).name,
+      code: (error as any).code,
+      stack: (error as any).stack,
+      body: req.body,
+    });
+
     return res.status(500).json({
       ok: false,
       message: "ERROR INTERNAL SERVER",
       mensaje: "ERROR INTERNO DEL SERVIDOR",
       data: null,
     });
+  } finally {
+    session.endSession();
   }
 };
 
@@ -579,6 +991,13 @@ const updateSuitInvoices = async (req: Request, res: Response) => {
         data: null,
       });
     }
+
+    await syncInvoicesForPacking({
+      type: "LUGGAGES",
+      currentDoc: updatedPallet,
+      previousClientName: clientName,
+      previousMotherGuide: motherGuide,
+    });
 
     return res.status(200).json({
       ok: true,
@@ -706,6 +1125,14 @@ const deleteSuitCases = async (req: Request, res: Response) => {
       await InventoryMovementModel.create(restoreMovements, { session });
     }
 
+    await syncInvoicesForPacking({
+      type: "LUGGAGES",
+      currentDoc: deleteSuit,
+      previousClientName: suitDoc.clientName,
+      previousMotherGuide: suitDoc.motherGuide,
+      session,
+    });
+
     await session.commitTransaction();
 
     return res.status(200).json({
@@ -814,6 +1241,13 @@ const deleteItemsSuitCases = async (req: Request, res: Response) => {
         referenceType: "SUITCASE_ITEM_DELETE",
         referenceId: String(docSuitcases._id),
         createdBy: (req as any).user?._id,
+      });
+
+      await syncInvoicesForPacking({
+        type: "LUGGAGES",
+        currentDoc: docSuitcases,
+        previousClientName: docSuitcases.clientName,
+        previousMotherGuide: docSuitcases.motherGuide,
       });
 
       return res.status(200).json({

@@ -3,6 +3,7 @@ export interface ISuitCases {
   motherGuide: string;
   miamiInvoiceNumber?: string;
   clientCode?: string;
+  costTransport?: number;
   arrivalStatus?: string;
   arrivedAt?: Date;
   deliveredAt?: Date;
@@ -32,6 +33,7 @@ export interface ISuitCasesClientSend {
   motherGuide: string;
   miamiInvoiceNumber?: string;
   clientCode?: string;
+  costTransport?: number;
   dateArrive: string;
   items: ISuitCaseItem[];
 }

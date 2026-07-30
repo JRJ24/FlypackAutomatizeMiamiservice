@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import PriceModel from "../models/PriceModel";
+import { normalizeClientName } from "../helpers/clientName";
 
 const newPrice = async (req: Request, res: Response) => {
   try {
@@ -107,6 +108,52 @@ const getPriceModel = async (req: Request, res: Response) => {
   }
 };
 
+const getPriceLookup = async (req: Request, res: Response) => {
+  try {
+    const model = String(req.query.model || "").trim();
+    const inches = String(req.query.inches || "").trim();
+    const clientName = normalizeClientName(req.query.clientName || req.query.client);
+
+    if (!model || !inches) {
+      return res.status(400).json({
+        ok: false,
+        message: "Model and inches are required",
+        mensaje: "Modelo y pulgadas son requeridos",
+        data: null,
+      });
+    }
+
+    const price = await PriceModel.findOne({
+      model,
+      inches,
+      isSpecial: clientName === "Daniel",
+    });
+
+    if (!price) {
+      return res.status(404).json({
+        ok: false,
+        message: "Price not found",
+        mensaje: "Precio no encontrado",
+        data: null,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Price found",
+      mensaje: "Precio encontrado",
+      data: price,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL SERVER",
+      mensaje: "ERROR INTERNO DEL SERVIDOR",
+      data: null,
+    });
+  }
+};
+
 const updatePrice = async (req: Request, res: Response) => {
   try {
     return res.status(501).json({
@@ -165,4 +212,4 @@ const deletePrice = async (req: Request, res: Response) => {
   }
 };
 
-export { newPrice, getPrice, updatePrice, deletePrice, getPriceModel };
+export { newPrice, getPrice, updatePrice, deletePrice, getPriceModel, getPriceLookup };

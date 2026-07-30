@@ -12,10 +12,12 @@ import {
 import PriceModel from "../models/PriceModel";
 import InventoryModel from "../models/Inventory.model";
 import InventoryMovementModel from "../models/InventoryMovement.model";
+import InvoicesModel from "../models/Invoices.model";
 import { normalizeMiamiInvoiceNumber } from "../helpers/miamiInvoiceNumber";
 import { normalizeClientName, withDecryptedClientFields } from "../helpers/clientName";
 import { getClientCodeForName } from "../helpers/clientIdentity";
 import { findInventoryItemForClient } from "../helpers/inventoryLink";
+import { syncInvoicesForPacking } from "../helpers/syncInvoices";
 
 const serializePallet = (pallet: any) => withDecryptedClientFields(pallet);
 
@@ -138,6 +140,8 @@ const toNumber = (value: unknown) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
 };
+
+const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
 const getPackingArrivalStatus = (packing: any) => {
   const items = Array.isArray(packing?.pallets) ? packing.pallets : [];
@@ -276,6 +280,14 @@ const findPalletByClientAndGuide = async (clientName: string, motherGuide: strin
   return candidates.find(
     (pallet) => normalizeClientName(pallet.clientName) === normalizedClient,
   ) || null;
+};
+
+const getInvoiceTransportCost = async (type: "PALLETS" | "LUGGAGES", clientName: string, motherGuide: string) => {
+  const normalizedClient = normalizeClientName(clientName);
+  const invoices = await InvoicesModel.find({ motherGuide, type }).sort({ date: -1, _id: -1 });
+  const invoice = invoices.find((item) => normalizeClientName(item.client) === normalizedClient);
+
+  return invoice?.costTransport;
 };
 
 // No modified
@@ -592,11 +604,21 @@ const getPalletsDataProcess = async (req: Request, res: Response) => {
       });
     }
 
+    const invoiceTransportCost = await getInvoiceTransportCost(
+      "PALLETS",
+      String(clientName),
+      String(motherGuide),
+    );
+    const costTransport = toNumber(palletDoc.costTransport ?? invoiceTransportCost);
+
     return res.status(200).json({
       ok: true,
       message: "success",
       mensaje: "Datos agrupados con éxito",
-      data: results[0],
+      data: {
+        ...results[0],
+        costTransport,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -634,6 +656,8 @@ const createPalletsWithSession = async (
     const normalizedMiamiInvoiceNumber = normalizeMiamiInvoiceNumber(
       data?.miamiInvoiceNumber,
     );
+    const hasCostTransport = data.costTransport !== undefined;
+    const costTransport = hasCostTransport ? Number(data.costTransport) : undefined;
 
     const { pallets, calcPallet } = data.pallet;
     const weightLB = Number(calcPallet?.weightLB);
@@ -643,6 +667,15 @@ const createPalletsWithSession = async (
         ok: false,
         message: "Invalid packing list data",
         mensaje: "Datos de packing list invalidos",
+        data: null,
+      });
+    }
+
+    if (costTransport !== undefined && (!Number.isFinite(costTransport) || costTransport < 0)) {
+      return jsonResponse(400, {
+        ok: false,
+        message: "Invalid transport cost",
+        mensaje: "Costo de transporte invalido",
         data: null,
       });
     }
@@ -888,6 +921,9 @@ const createPalletsWithSession = async (
               ...(normalizedMiamiInvoiceNumber
                 ? { miamiInvoiceNumber: normalizedMiamiInvoiceNumber }
                 : {}),
+              ...(costTransport !== undefined
+                ? { costTransport }
+                : {}),
             },
             $push: { pallet: newPalletSingle },
           },
@@ -905,6 +941,7 @@ const createPalletsWithSession = async (
                 motherGuide: generatedMotherGuide,
                 clientName,
                 clientCode,
+                costTransport: costTransport ?? 0,
                 miamiInvoiceNumber: normalizedMiamiInvoiceNumber,
                 isActive: true,
                 isDelete: false,
@@ -943,6 +980,12 @@ const createPalletsWithSession = async (
     } else {
       await InventoryMovementModel.create(movementDocs, { ordered: true });
     }
+
+    await syncInvoicesForPacking({
+      type: "PALLETS",
+      currentDoc: saved,
+      session,
+    });
 
     return jsonResponse(201, {
       ok: true,
@@ -1144,19 +1187,6 @@ const deletePallets = async (req: Request, res: Response) => {
 
     const normalizedClient = normalizeClientName(clientName);
     const restoreMovements: any[] = [];
-    const hasInvoicedItems = (palletDoc.pallet || []).some((disk: any) =>
-      (disk.pallets || []).some((item: any) => toNumber(item.invoicedQuantity) > 0),
-    );
-
-    if (hasInvoicedItems) {
-      await session.abortTransaction();
-      return res.status(409).json({
-        ok: false,
-        message: "Cannot delete a pallet with invoiced items",
-        mensaje: "No se puede eliminar un pallet con items facturados",
-        data: null,
-      });
-    }
 
     for (const disk of palletDoc.pallet || []) {
       for (const item of disk.pallets || []) {
@@ -1234,6 +1264,14 @@ const deletePallets = async (req: Request, res: Response) => {
       await InventoryMovementModel.create(restoreMovements, { session });
     }
 
+    await syncInvoicesForPacking({
+      type: "PALLETS",
+      currentDoc: deletedPallet,
+      previousClientName: normalizedClient,
+      previousMotherGuide: palletDoc.motherGuide,
+      session,
+    });
+
     await session.commitTransaction();
 
     return res.status(200).json({
@@ -1302,15 +1340,6 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
         });
       }
 
-      if (toNumber(itemDeleted.invoicedQuantity) > 0) {
-        return res.status(409).json({
-          ok: false,
-          message: "Cannot delete an invoiced item",
-          mensaje: "No se puede eliminar un item facturado",
-          data: null,
-        });
-      }
-
       const inventoryItem = await findInventoryItemForClient({
         inventoryId: itemDeleted.inventoryId ? String(itemDeleted.inventoryId) : undefined,
         clientName: normalizeClientName(docPallet.clientName),
@@ -1341,6 +1370,7 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
       if (palletSingle.pallets.length === 0) {
         docPallet.pallet.splice(indexPallet, 1);
       }
+      refreshPalletStatuses(docPallet);
       await docPallet.save();
 
       await InventoryMovementModel.create({
@@ -1353,6 +1383,13 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
         referenceType: "PALLET_ITEM_DELETE",
         referenceId: String(docPallet._id),
         createdBy: (req as any).user?._id,
+      });
+
+      await syncInvoicesForPacking({
+        type: "PALLETS",
+        currentDoc: docPallet,
+        previousClientName: docPallet.clientName,
+        previousMotherGuide: docPallet.motherGuide,
       });
 
       return res.status(200).json({
@@ -1372,12 +1409,418 @@ const deleteItemsPallets = async (req: Request, res: Response) => {
   }
 };
 
+const updatePalletItems = async (req: Request, res: Response) => {
+  const session = await PalletsModel.startSession();
+
+  try {
+    session.startTransaction();
+
+    const { _id, items, costTransport } = req.body;
+    const hasCostTransport = costTransport !== undefined;
+    const role = (req as any).user?.role;
+    const canUpdateLineDetails = ["FLYPACKADMIN", "FLYPACKJDG", "FLYPACKMIAMI"].includes(role);
+    const canUseRequestedUnitPrice = role === "FLYPACKADMIN" || role === "FLYPACKJDG";
+    const canUpdateTransportCost = role === "FLYPACKADMIN" || role === "FLYPACKJDG";
+
+    if (!_id || ((!Array.isArray(items) || items.length === 0) && !hasCostTransport)) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid pallet item update data",
+        mensaje: "Datos de actualizacion de pallet invalidos",
+        data: null,
+      });
+    }
+
+    const nextCostTransport = hasCostTransport ? Number(costTransport) : undefined;
+
+    if (
+      nextCostTransport !== undefined &&
+      (!Number.isFinite(nextCostTransport) || nextCostTransport < 0)
+    ) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid transport cost",
+        mensaje: "Costo de transporte invalido",
+        data: null,
+      });
+    }
+
+    if (nextCostTransport !== undefined && !canUpdateTransportCost) {
+      await session.abortTransaction();
+      return res.status(403).json({
+        ok: false,
+        message: "Only Admin/JDG can update transport cost",
+        mensaje: "Solo Admin/JDG pueden actualizar el costo de transporte",
+        data: null,
+      });
+    }
+
+    const palletDoc = await PalletsModel.findById(_id).session(session);
+
+    if (!palletDoc || palletDoc.isDelete) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        ok: false,
+        message: "Pallet not found",
+        mensaje: "Pallet no encontrado",
+        data: null,
+      });
+    }
+
+    const maintenance = await MaintenanceCostModel.findOne().session(session);
+
+    if (!maintenance) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        ok: false,
+        message: "Maintenance cost not found",
+        mensaje: "Costo de mantenimiento no encontrado",
+        data: null,
+      });
+    }
+
+    ensurePalletTrackingIds(palletDoc);
+
+    const normalizedClient = normalizeClientName(palletDoc.clientName);
+    const affectedPackings = new Set<any>();
+    const inventoryMovements: any[] = [];
+    let shouldSyncInvoices = nextCostTransport !== undefined;
+
+    if (nextCostTransport !== undefined) {
+      palletDoc.costTransport = roundMoney(nextCostTransport);
+    }
+
+    for (const itemUpdate of Array.isArray(items) ? items : []) {
+      const packing = findPackingForUpdate(palletDoc, itemUpdate);
+      const line = findLineForUpdate(packing, itemUpdate);
+
+      if (!packing || !line) {
+        await session.abortTransaction();
+        return res.status(404).json({
+          ok: false,
+          message: "Packing item not found",
+          mensaje: "Item de packing no encontrado",
+          data: itemUpdate,
+        });
+      }
+
+      const oldQuantity = toNumber(line.quantityUnit);
+      const nextQuantity = Number(itemUpdate.quantityUnit ?? line.quantityUnit);
+      const hasWeightLB = itemUpdate.weightLB !== undefined;
+      const nextWeightLB = hasWeightLB
+        ? Number(itemUpdate.weightLB)
+        : toNumber(packing.calcPallet?.weightLB);
+      const requestedModel = typeof itemUpdate.model === "string" && itemUpdate.model.trim()
+        ? itemUpdate.model.trim()
+        : undefined;
+      const requestedInchs = typeof itemUpdate.inchs === "string" && itemUpdate.inchs.trim()
+        ? itemUpdate.inchs.trim()
+        : undefined;
+      const requestedDescriptionModel = typeof itemUpdate.descriptionModel === "string"
+        ? itemUpdate.descriptionModel.trim()
+        : undefined;
+      const restrictedLineDetailsChanged = !canUpdateLineDetails && (
+        (requestedModel !== undefined && requestedModel !== String(line.model || "")) ||
+        (requestedInchs !== undefined && requestedInchs !== String(line.inchs || "")) ||
+        (requestedDescriptionModel !== undefined && requestedDescriptionModel !== String(line.descriptionModel || ""))
+      );
+
+      if (restrictedLineDetailsChanged) {
+        await session.abortTransaction();
+        return res.status(403).json({
+          ok: false,
+          message: "Only operations can update pallet line details",
+          mensaje: "Solo operaciones pueden actualizar detalles de lineas del pallet",
+          data: itemUpdate,
+        });
+      }
+
+      const nextModel = canUpdateLineDetails ? (requestedModel ?? line.model) : line.model;
+      const nextInchs = canUpdateLineDetails ? (requestedInchs ?? line.inchs) : line.inchs;
+      const nextDescriptionModel = canUpdateLineDetails
+        ? (requestedDescriptionModel ?? line.descriptionModel)
+        : line.descriptionModel;
+      let nextUnitPrice = toNumber(line.unitPrice);
+
+      if (canUpdateLineDetails) {
+        const priceInfo = await PriceModel.findOne({
+          model: nextModel,
+          inches: nextInchs,
+          isSpecial: normalizedClient === "Daniel",
+        }).session(session);
+        nextUnitPrice = priceInfo && Number.isFinite(Number(priceInfo.unitPrice))
+          ? Number(priceInfo.unitPrice)
+          : canUseRequestedUnitPrice
+            ? Number(itemUpdate.unitPrice ?? line.unitPrice)
+            : toNumber(line.unitPrice);
+      }
+
+      if (
+        !Number.isFinite(nextQuantity) ||
+        nextQuantity <= 0 ||
+        !Number.isFinite(nextWeightLB) ||
+        nextWeightLB <= 0 ||
+        !Number.isFinite(nextUnitPrice) ||
+        nextUnitPrice < 0
+      ) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          ok: false,
+          message: "Invalid pallet item values",
+          mensaje: "Valores de item de pallet invalidos",
+          data: itemUpdate,
+        });
+      }
+
+      const quantityDelta = nextQuantity - oldQuantity;
+      const inventoryIdentityChanged =
+        String(nextModel) !== String(line.model) ||
+        String(nextInchs) !== String(line.inchs) ||
+        String(nextDescriptionModel) !== String(line.descriptionModel);
+      const unitPriceChanged = roundMoney(nextUnitPrice) !== roundMoney(toNumber(line.unitPrice));
+      const weightChanged = roundMoney(nextWeightLB) !== roundMoney(toNumber(packing.calcPallet?.weightLB));
+
+      if (inventoryIdentityChanged || unitPriceChanged || weightChanged) {
+        shouldSyncInvoices = true;
+      }
+
+      if (inventoryIdentityChanged) {
+        const oldInventoryItem = await findInventoryItemForClient({
+          inventoryId: line.inventoryId ? String(line.inventoryId) : undefined,
+          clientName: normalizedClient,
+          brandTV: line.model,
+          model: line.descriptionModel,
+          inchs: line.inchs,
+          miamiInvoiceNumber: line.inventoryMiamiInvoiceNumber,
+          session,
+        });
+
+        if (!oldInventoryItem) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            ok: false,
+            message: "Original inventory item not found",
+            mensaje: "Item original de inventario no encontrado",
+            data: itemUpdate,
+          });
+        }
+
+        const restoredInventory = await InventoryModel.findOneAndUpdate(
+          { _id: oldInventoryItem._id, isDisabled: false },
+          { $inc: { quantity: oldQuantity } },
+          { returnDocument: "after", runValidators: true, session },
+        );
+
+        if (!restoredInventory) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            ok: false,
+            message: "Original inventory could not be restored",
+            mensaje: "No se pudo restaurar inventario original",
+            data: itemUpdate,
+          });
+        }
+
+        inventoryMovements.push({
+          inventoryId: restoredInventory._id,
+          type: "ADJUSTMENT",
+          quantity: oldQuantity,
+          previousQuantity: Number(restoredInventory.quantity) - oldQuantity,
+          resultingQuantity: Number(restoredInventory.quantity),
+          miamiInvoiceNumber: palletDoc.miamiInvoiceNumber,
+          referenceType: "PALLET_ITEM_UPDATE_RESTORE",
+          referenceId: String(palletDoc._id),
+          createdBy: (req as any).user?._id,
+        });
+
+        const nextInventoryItem = await findInventoryItemForClient({
+          clientName: normalizedClient,
+          brandTV: nextModel,
+          model: nextDescriptionModel,
+          inchs: nextInchs,
+          minQuantity: nextQuantity,
+          session,
+        });
+
+        if (!nextInventoryItem) {
+          await session.abortTransaction();
+          return res.status(409).json({
+            ok: false,
+            message: "Insufficient inventory for updated item",
+            mensaje: "Inventario insuficiente para el item actualizado",
+            data: itemUpdate,
+          });
+        }
+
+        const updatedNextInventory = await InventoryModel.findOneAndUpdate(
+          {
+            _id: nextInventoryItem._id,
+            isDisabled: false,
+            quantity: { $gte: nextQuantity },
+          },
+          { $inc: { quantity: -nextQuantity } },
+          { returnDocument: "after", runValidators: true, session },
+        );
+
+        if (!updatedNextInventory) {
+          await session.abortTransaction();
+          return res.status(409).json({
+            ok: false,
+            message: "Insufficient inventory for updated item",
+            mensaje: "Inventario insuficiente para el item actualizado",
+            data: itemUpdate,
+          });
+        }
+
+        line.inventoryId = String(updatedNextInventory._id);
+        line.inventoryMiamiInvoiceNumber = updatedNextInventory.lastMiamiInvoiceNumber;
+
+        inventoryMovements.push({
+          inventoryId: updatedNextInventory._id,
+          type: "ADJUSTMENT",
+          quantity: nextQuantity,
+          previousQuantity: Number(updatedNextInventory.quantity) + nextQuantity,
+          resultingQuantity: Number(updatedNextInventory.quantity),
+          miamiInvoiceNumber: palletDoc.miamiInvoiceNumber,
+          referenceType: "PALLET_ITEM_UPDATE_EXIT",
+          referenceId: String(palletDoc._id),
+          createdBy: (req as any).user?._id,
+        });
+      } else if (quantityDelta !== 0) {
+        const inventoryItem = await findInventoryItemForClient({
+          inventoryId: line.inventoryId ? String(line.inventoryId) : undefined,
+          clientName: normalizedClient,
+          brandTV: line.model,
+          model: line.descriptionModel,
+          inchs: line.inchs,
+          miamiInvoiceNumber: line.inventoryMiamiInvoiceNumber,
+          session,
+        });
+
+        if (!inventoryItem) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            ok: false,
+            message: "Inventory item not found",
+            mensaje: "Item de inventario no encontrado",
+            data: itemUpdate,
+          });
+        }
+
+        if (quantityDelta > 0 && Number(inventoryItem.quantity) < quantityDelta) {
+          await session.abortTransaction();
+          return res.status(409).json({
+            ok: false,
+            message: "Insufficient inventory",
+            mensaje: "Inventario insuficiente",
+            data: itemUpdate,
+          });
+        }
+
+        const updatedInventory = await InventoryModel.findOneAndUpdate(
+          { _id: inventoryItem._id, isDisabled: false },
+          { $inc: { quantity: -quantityDelta } },
+          { returnDocument: "after", runValidators: true, session },
+        );
+
+        if (!updatedInventory) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            ok: false,
+            message: "Inventory could not be updated",
+            mensaje: "No se pudo actualizar inventario",
+            data: itemUpdate,
+          });
+        }
+
+        inventoryMovements.push({
+          inventoryId: updatedInventory._id,
+          type: "ADJUSTMENT",
+          quantity: Math.abs(quantityDelta),
+          previousQuantity: Number(updatedInventory.quantity) + quantityDelta,
+          resultingQuantity: Number(updatedInventory.quantity),
+          miamiInvoiceNumber: palletDoc.miamiInvoiceNumber,
+          referenceType: "PALLET_ITEM_UPDATE",
+          referenceId: String(palletDoc._id),
+          createdBy: (req as any).user?._id,
+        });
+      }
+
+      line.model = nextModel;
+      line.inchs = nextInchs;
+      line.descriptionModel = nextDescriptionModel;
+      line.quantityUnit = nextQuantity;
+      line.unitPrice = nextUnitPrice;
+      line.totalUnitPrice = roundMoney(nextUnitPrice * nextQuantity);
+      if (hasWeightLB) {
+        packing.calcPallet.weightLB = nextWeightLB;
+      }
+      affectedPackings.add(packing);
+    }
+
+    for (const packing of affectedPackings) {
+      const totalPrice = (packing.pallets || []).reduce(
+        (total: number, item: any) => total + toNumber(item.totalUnitPrice),
+        0,
+      );
+      const weightLB = toNumber(packing.calcPallet?.weightLB);
+
+      packing.calcPallet = await CalcCost(weightLB, maintenance, totalPrice);
+    }
+
+    refreshPalletStatuses(palletDoc);
+    palletDoc.markModified("pallet");
+
+    if (inventoryMovements.length > 0) {
+      await InventoryMovementModel.create(inventoryMovements, { session });
+    }
+
+    const savedPallet = await palletDoc.save({ session });
+
+    if (shouldSyncInvoices) {
+      await syncInvoicesForPacking({
+        type: "PALLETS",
+        currentDoc: savedPallet,
+        previousClientName: palletDoc.clientName,
+        previousMotherGuide: palletDoc.motherGuide,
+        session,
+      });
+    }
+
+    await session.commitTransaction();
+
+    return res.status(200).json({
+      ok: true,
+      message: "Pallet items updated",
+      mensaje: "Items de pallet actualizados",
+      data: serializePallet(savedPallet),
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    console.error("[PALLET ITEM UPDATE ERROR]", {
+      message: (error as any).message,
+      name: (error as any).name,
+      code: (error as any).code,
+      stack: (error as any).stack,
+      body: req.body,
+    });
+
+    return res.status(500).json({
+      ok: false,
+      message: "Error internal server",
+      mensaje: "Error interno del servidor",
+      data: null,
+    });
+  } finally {
+    session.endSession();
+  }
+};
+
 const updateGuide = async (req: Request, res: Response) => {
   try {
     const { _id, motherGuide } = req.body;
-
-    console.log(motherGuide);
-    console.log(_id);
 
     if (!motherGuide && !_id) {
       return res.status(404).json({
@@ -1388,9 +1831,14 @@ const updateGuide = async (req: Request, res: Response) => {
       });
     }
 
+    const palletBeforeUpdate = await PalletsModel.findById(_id);
+    const nextStatus = palletBeforeUpdate?.status === "Pending guidance"
+      ? "Not invoiced"
+      : palletBeforeUpdate?.status || "Not invoiced";
+
     const update = await PalletsModel.findByIdAndUpdate(
       _id,
-      { motherGuide: motherGuide, status: "Not invoiced" },
+      { motherGuide: motherGuide, status: nextStatus },
       { returnDocument: "after", runValidators: true },
     );
 
@@ -1402,6 +1850,13 @@ const updateGuide = async (req: Request, res: Response) => {
         data: null,
       });
     }
+
+    await syncInvoicesForPacking({
+      type: "PALLETS",
+      currentDoc: update,
+      previousClientName: palletBeforeUpdate?.clientName,
+      previousMotherGuide: palletBeforeUpdate?.motherGuide,
+    });
 
     return res.status(200).json({
       ok: true,
@@ -1517,18 +1972,23 @@ const updatePalletPartialArrival = async (req: Request, res: Response) => {
     }
 
     ensurePalletTrackingIds(palletDoc);
+    let shouldSyncInvoices = false;
 
     for (const update of items) {
-      const arrivedQuantity = Number(update.arrivedQuantity);
+      const hasArrivedQuantity = update.arrivedQuantity !== undefined;
+      const hasInvoicedQuantity = update.invoicedQuantity !== undefined;
+      const arrivedQuantity = hasArrivedQuantity ? Number(update.arrivedQuantity) : undefined;
+      const invoicedQuantity = hasInvoicedQuantity ? Number(update.invoicedQuantity) : undefined;
 
       if (
-        !Number.isFinite(arrivedQuantity) ||
-        arrivedQuantity < 0
+        (!hasArrivedQuantity && !hasInvoicedQuantity) ||
+        (hasArrivedQuantity && (!Number.isFinite(arrivedQuantity) || Number(arrivedQuantity) < 0)) ||
+        (hasInvoicedQuantity && (!Number.isFinite(invoicedQuantity) || Number(invoicedQuantity) < 0))
       ) {
         return res.status(400).json({
           ok: false,
-          message: "Invalid arrival item",
-          mensaje: "Item de llegada invalido",
+          message: "Invalid received/invoiced item",
+          mensaje: "Item recibido/facturado invalido",
           data: update,
         });
       }
@@ -1545,34 +2005,31 @@ const updatePalletPartialArrival = async (req: Request, res: Response) => {
         });
       }
 
-      const manifestQuantity = toNumber(item.quantityUnit);
-      const invoicedQuantity = toNumber(item.invoicedQuantity);
-
-      if (arrivedQuantity > manifestQuantity) {
-        return res.status(409).json({
-          ok: false,
-          message: "Arrived quantity cannot exceed manifest quantity",
-          mensaje: "La cantidad recibida no puede exceder la cantidad manifestada",
-          data: update,
-        });
+      if (hasArrivedQuantity) {
+        item.arrivedQuantity = arrivedQuantity;
       }
 
-      if (arrivedQuantity < invoicedQuantity) {
-        return res.status(409).json({
-          ok: false,
-          message: "Arrived quantity cannot be less than invoiced quantity",
-          mensaje: "La cantidad recibida no puede ser menor a la cantidad facturada",
-          data: update,
-        });
-      }
+      if (hasInvoicedQuantity) {
+        if (toNumber(item.invoicedQuantity) !== Number(invoicedQuantity)) {
+          shouldSyncInvoices = true;
+        }
 
-      item.arrivedQuantity = arrivedQuantity;
-      item.invoicedQuantity = invoicedQuantity;
+        item.invoicedQuantity = invoicedQuantity;
+      }
     }
 
     refreshPalletStatuses(palletDoc);
     palletDoc.markModified("pallet");
     await palletDoc.save();
+
+    if (shouldSyncInvoices) {
+      await syncInvoicesForPacking({
+        type: "PALLETS",
+        currentDoc: palletDoc,
+        previousClientName: clientName,
+        previousMotherGuide: motherGuide,
+      });
+    }
 
     return res.status(200).json({
       ok: true,
@@ -1608,6 +2065,7 @@ export {
   getPalletsDataProcess,
   getPalletsBillings,
   deleteItemsPallets,
+  updatePalletItems,
   updateGuide,
   updatePalletArrivalStatus,
   updatePalletPartialArrival,

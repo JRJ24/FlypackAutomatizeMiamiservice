@@ -5,8 +5,8 @@ import InvoicesModel from "../models/Invoices.model";
 import { normalizeClientName, withDecryptedClientFields } from "../helpers/clientName";
 import { getClientCodeForName } from "../helpers/clientIdentity";
 import PalletsModel from "../models/Pallets.model";
-import AccountsReceivableModel from "../models/Finanzes/AccountsReceivable.model";
-import AccountsCXCModel from "../models/Finanzes/AccountsCXC.model";
+import SuitcasesModel from "../models/Suitcases.model";
+import { syncInvoiceFinances, syncInvoicesForPacking } from "../helpers/syncInvoices";
 
 const serializeInvoice = (invoice: any) => withDecryptedClientFields(invoice);
 
@@ -136,6 +136,148 @@ const findLineForUpdate = (packing: any, update: any) => {
   return null;
 };
 
+const buildPalletInvoiceData = (
+  invoiceLines: { packing: any; line: any; quantity: number }[],
+  costTransport: number,
+) => {
+  const quantityByPacking = new Map<string, number>();
+  const packingById = new Map<string, any>();
+  const items: any[] = [];
+  let totalSale = 0;
+  let totalTVs = 0;
+
+  for (const invoiceLine of invoiceLines) {
+    const quantity = toNumber(invoiceLine.quantity);
+
+    if (quantity <= 0) continue;
+
+    const unitPrice = toNumber(invoiceLine.line.unitPrice);
+    const lineTotalSale = roundMoney(unitPrice * quantity);
+    const packingId = invoiceLine.packing.packingId;
+    const lineId = invoiceLine.line.lineId;
+
+    packingById.set(packingId, invoiceLine.packing);
+    quantityByPacking.set(
+      packingId,
+      (quantityByPacking.get(packingId) || 0) + quantity,
+    );
+    totalSale += lineTotalSale;
+    totalTVs += quantity;
+
+    items.push({
+      packingId,
+      lineId,
+      packingDescription: invoiceLine.packing.palletDescription,
+      brandTV: invoiceLine.line.model,
+      inches: invoiceLine.line.inchs,
+      model: invoiceLine.line.descriptionModel,
+      quantity,
+      unitPrice,
+      totalSale: lineTotalSale,
+    });
+  }
+
+  let totalFreight = 0;
+  let totalRate = 0;
+  let totalADM = 0;
+  let totalService = 0;
+  let totalCosts = 0;
+
+  for (const [packingId, invoicedQuantity] of quantityByPacking.entries()) {
+    const packing = packingById.get(packingId);
+    const packingQuantity = (packing?.pallets || []).reduce(
+      (total: number, item: any) => total + toNumber(item.quantityUnit),
+      0,
+    );
+    const ratio = packingQuantity > 0 ? invoicedQuantity / packingQuantity : 0;
+
+    totalFreight += toNumber(packing?.calcPallet?.totalFreight) * ratio;
+    totalRate += toNumber(packing?.calcPallet?.totalRate) * ratio;
+    totalADM += toNumber(packing?.calcPallet?.ADM) * ratio;
+    totalService += toNumber(packing?.calcPallet?.caribeTrans) * ratio;
+    totalCosts += toNumber(packing?.calcPallet?.totalCost) * ratio;
+  }
+
+  totalSale = roundMoney(totalSale);
+  totalFreight = roundMoney(totalFreight);
+  totalRate = roundMoney(totalRate);
+  totalADM = roundMoney(totalADM);
+  totalService = roundMoney(totalService);
+  totalCosts = roundMoney(totalCosts);
+
+  const totalSaleNoTransport = roundMoney(totalSale + costTransport);
+
+  return {
+    totalPallets: String(quantityByPacking.size),
+    totalTVs: String(totalTVs),
+    totalFreight,
+    totalRate,
+    totalADM,
+    totalService,
+    totalCosts,
+    totalSale,
+    totalUtility: roundMoney(totalSaleNoTransport - totalCosts),
+    totalSaleNoTransport,
+    costTransport,
+    invoiceScope: "PARTIAL",
+    items,
+  };
+};
+
+const getCurrentPalletInvoiceLines = (palletDoc: any) => (palletDoc.pallet || []).flatMap(
+  (packing: any) => (packing.pallets || [])
+    .map((line: any) => ({
+      packing,
+      line,
+      quantity: toNumber(line.invoicedQuantity),
+    }))
+    .filter((invoiceLine: any) => invoiceLine.quantity > 0),
+);
+
+const findPalletForInvoice = async (clientName: string, motherGuide: string, session?: any) => {
+  const request = PalletsModel.find({ motherGuide, isDelete: false, isActive: true });
+  if (session) request.session(session);
+
+  const normalizedClient = normalizeClientName(clientName);
+  const candidates = await request;
+
+  return candidates.find((pallet) => normalizeClientName(pallet.clientName) === normalizedClient) || null;
+};
+
+const findSuitcaseForInvoice = async (clientName: string, motherGuide: string, session?: any) => {
+  const request = SuitcasesModel.find({ motherGuide, isDelete: false });
+  if (session) request.session(session);
+
+  const normalizedClient = normalizeClientName(clientName);
+  const candidates = await request;
+
+  return candidates.find((suitcase) => normalizeClientName(suitcase.clientName) === normalizedClient) || null;
+};
+
+const updatePackingTransportCost = async (invoice: any, costTransport: number, session?: any) => {
+  if (invoice.type === "PALLETS") {
+    const palletDoc = await findPalletForInvoice(invoice.client, invoice.motherGuide, session);
+
+    if (!palletDoc) return null;
+
+    palletDoc.costTransport = costTransport;
+    await palletDoc.save(session ? { session } : undefined);
+    return palletDoc;
+  }
+
+  if (invoice.type === "LUGGAGES") {
+    const suitDoc = await findSuitcaseForInvoice(invoice.client, invoice.motherGuide, session);
+
+    if (!suitDoc) return null;
+
+    suitDoc.costTransport = costTransport;
+    await suitDoc.save(session ? { session } : undefined);
+    return suitDoc;
+  }
+
+  return null;
+};
+
 const getInvoices = async (req: Request, res: Response) => {
   try {
     const page = Math.max(Number(req.query.page) || 1, 1);
@@ -182,11 +324,161 @@ const getInvoices = async (req: Request, res: Response) => {
   }
 };
 
-const createInvoices = async (req: Request, res: Response) => {
+const updateInvoice = async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
+
   try {
+    session.startTransaction();
+
+    const invoiceNumber = String(req.params.invoiceNumber || req.body.invoiceNumber || "").trim();
+    const hasCostTransport = req.body.costTransport !== undefined;
+
+    if (!invoiceNumber || !hasCostTransport) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid invoice update data",
+        mensaje: "Datos de actualizacion de factura invalidos",
+        data: null,
+      });
+    }
+
+    const costTransport = Number(req.body.costTransport);
+
+    if (!Number.isFinite(costTransport) || costTransport < 0) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        ok: false,
+        message: "Invalid transport cost",
+        mensaje: "Costo de transporte invalido",
+        data: null,
+      });
+    }
+
+    const invoice = await InvoicesModel.findOne({ invoiceNumber }).session(session);
+
+    if (!invoice) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        ok: false,
+        message: "Invoice not found",
+        mensaje: "Factura no encontrada",
+        data: null,
+      });
+    }
+
+    const packingDoc = await updatePackingTransportCost(
+      invoice,
+      roundMoney(costTransport),
+      session,
+    );
+
+    if ((invoice.type === "PALLETS" || invoice.type === "LUGGAGES") && !packingDoc) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        ok: false,
+        message: "Packing list not found for invoice",
+        mensaje: "Packing list no encontrado para la factura",
+        data: null,
+      });
+    }
+
+    if (packingDoc) {
+      await syncInvoicesForPacking({
+        type: invoice.type as "PALLETS" | "LUGGAGES",
+        currentDoc: packingDoc,
+        previousClientName: invoice.client,
+        previousMotherGuide: invoice.motherGuide,
+        session,
+      });
+
+      const syncedInvoice = await InvoicesModel.findOne({ invoiceNumber }).session(session);
+
+      if (syncedInvoice) {
+        const nextInvoiceTotal = roundMoney(
+          toNumber(syncedInvoice.totalSale) + toNumber(syncedInvoice.costTransport),
+        );
+        const nextUtility = roundMoney(nextInvoiceTotal - toNumber(syncedInvoice.totalCosts));
+
+        if (
+          roundMoney(toNumber(syncedInvoice.totalSaleNoTransport)) !== nextInvoiceTotal ||
+          roundMoney(toNumber(syncedInvoice.totalUtility)) !== nextUtility
+        ) {
+          syncedInvoice.totalSaleNoTransport = nextInvoiceTotal;
+          syncedInvoice.totalUtility = nextUtility;
+
+          const financeState = await syncInvoiceFinances(
+            syncedInvoice,
+            nextInvoiceTotal,
+            syncedInvoice.client,
+            syncedInvoice.motherGuide,
+            session,
+          );
+
+          syncedInvoice.status = financeState.status;
+          syncedInvoice.totalPaid = financeState.totalPaid;
+          await syncedInvoice.save({ session });
+        }
+      }
+    } else {
+      invoice.costTransport = roundMoney(costTransport);
+      invoice.totalSaleNoTransport = roundMoney(toNumber(invoice.totalSale) + invoice.costTransport);
+      invoice.totalUtility = roundMoney(invoice.totalSaleNoTransport - toNumber(invoice.totalCosts));
+
+      const financeState = await syncInvoiceFinances(
+        invoice,
+        invoice.totalSaleNoTransport,
+        invoice.client,
+        invoice.motherGuide,
+        session,
+      );
+
+      invoice.status = financeState.status;
+      invoice.totalPaid = financeState.totalPaid;
+      await invoice.save({ session });
+    }
+
+    const updatedInvoice = await InvoicesModel.findOne({ invoiceNumber }).session(session);
+
+    await session.commitTransaction();
+
+    return res.status(200).json({
+      ok: true,
+      message: "Invoice updated",
+      mensaje: "Factura actualizada",
+      data: updatedInvoice ? serializeInvoice(updatedInvoice) : null,
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    console.error("[UPDATE INVOICE ERROR]", {
+      message: (error as any).message,
+      name: (error as any).name,
+      code: (error as any).code,
+      stack: (error as any).stack,
+      body: req.body,
+    });
+
+    return res.status(500).json({
+      ok: false,
+      message: "ERROR INTERNAL SERVER",
+      mensaje: "ERROR INTERNO DEL SERVIDOR",
+      data: null,
+    });
+  } finally {
+    await session.endSession();
+  }
+};
+
+const createInvoices = async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
     const { ...data } = req.body;
 
     if (!data) {
+      await session.abortTransaction();
       return res.status(400).json({
         ok: false,
         message: "No data",
@@ -200,12 +492,20 @@ const createInvoices = async (req: Request, res: Response) => {
       data.clientCode = await getClientCodeForName(data.client);
     }
 
+    data.costTransport = Number.isFinite(Number(data.costTransport))
+      ? Number(data.costTransport)
+      : 0;
+    data.totalSale = toNumber(data.totalSale);
+    data.totalCosts = toNumber(data.totalCosts);
+    data.totalSaleNoTransport = roundMoney(data.totalSale + data.costTransport);
+    data.totalUtility = roundMoney(data.totalSaleNoTransport - data.totalCosts);
+    data.date = data.date || new Date().toISOString();
 
-    data.totalSaleNoTransport = Number(data.totalSale) + Number(data.costTransport); 
-
-    const invoice = await InvoicesModel.create(data);
+    const createdInvoices = await InvoicesModel.create([data], { session });
+    const invoice = createdInvoices[0];
 
     if (!invoice) {
+      await session.abortTransaction();
       return res.status(400).json({
         ok: false,
         message: "No invoices",
@@ -214,6 +514,22 @@ const createInvoices = async (req: Request, res: Response) => {
       });
     }
 
+    await updatePackingTransportCost(invoice, data.costTransport, session);
+
+    const financeState = await syncInvoiceFinances(
+      invoice,
+      data.totalSaleNoTransport,
+      data.client,
+      data.motherGuide,
+      session,
+    );
+
+    invoice.status = financeState.status;
+    invoice.totalPaid = financeState.totalPaid;
+    await invoice.save({ session });
+
+    await session.commitTransaction();
+
     return res.status(200).json({
       ok: true,
       message: "Invoices",
@@ -221,6 +537,7 @@ const createInvoices = async (req: Request, res: Response) => {
       data: serializeInvoice(invoice),
     });
   } catch (error) {
+    await session.abortTransaction();
     console.log(error);
     return res.status(500).json({
       ok: false,
@@ -228,6 +545,8 @@ const createInvoices = async (req: Request, res: Response) => {
       mensaje: "ERROR INTERNO DEL SERVIDOR",
       data: null,
     });
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -237,10 +556,13 @@ const createPartialPalletInvoice = async (req: Request, res: Response) => {
   try {
     session.startTransaction();
 
-    const { client, motherGuide, costTransport = 0, items } = req.body;
+    const { client, motherGuide, costTransport = 0, items, invoiceMode } = req.body;
     const normalizedClient = normalizeClientName(client);
     const clientCode = await getClientCodeForName(normalizedClient);
     const transportCost = Number(costTransport || 0);
+    const role = (req as any).user?.role;
+    const canUpdateTransportCost = role === "FLYPACKADMIN" || role === "FLYPACKJDG";
+    const normalizedInvoiceMode = String(invoiceMode || "").toUpperCase();
 
     if (
       !normalizedClient ||
@@ -277,6 +599,58 @@ const createPartialPalletInvoice = async (req: Request, res: Response) => {
       });
     }
 
+    const existingPalletInvoices = await InvoicesModel.find({
+      motherGuide,
+      type: "PALLETS",
+    })
+      .sort({ date: -1, _id: -1 })
+      .session(session);
+    const existingPalletInvoice = existingPalletInvoices.find(
+      (invoice) => normalizeClientName(invoice.client) === normalizedClient,
+    );
+
+    if (
+      existingPalletInvoice &&
+      normalizedInvoiceMode !== "CREATE_NEW" &&
+      normalizedInvoiceMode !== "OVERWRITE_EXISTING"
+    ) {
+      await session.abortTransaction();
+      return res.status(409).json({
+        ok: false,
+        code: "PALLET_INVOICE_EXISTS",
+        message: "A related invoice already exists",
+        mensaje: "Ya existe una factura relacionada para este cliente y guia madre",
+        data: serializeInvoice(existingPalletInvoice),
+      });
+    }
+
+    if (normalizedInvoiceMode === "OVERWRITE_EXISTING" && !existingPalletInvoice) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        ok: false,
+        message: "Related invoice not found",
+        mensaje: "No se encontro una factura relacionada para este cliente y guia madre",
+        data: null,
+      });
+    }
+
+    const currentTransportCost = roundMoney(toNumber(
+      palletDoc.costTransport ?? existingPalletInvoice?.costTransport ?? 0,
+    ));
+    const effectiveTransportCost = canUpdateTransportCost
+      ? roundMoney(transportCost)
+      : currentTransportCost;
+
+    if (!canUpdateTransportCost && roundMoney(transportCost) !== effectiveTransportCost) {
+      await session.abortTransaction();
+      return res.status(403).json({
+        ok: false,
+        message: "Only Admin/JDG can update transport cost",
+        mensaje: "Solo Admin/JDG pueden actualizar el costo de transporte",
+        data: null,
+      });
+    }
+
     ensurePalletTrackingIds(palletDoc);
 
     const selectedItems = items.map((item: any) => ({
@@ -301,10 +675,7 @@ const createPartialPalletInvoice = async (req: Request, res: Response) => {
       });
     }
 
-    const quantityByPacking = new Map<string, number>();
-    const invoiceItems: any[] = [];
-    let totalSale = 0;
-    let totalTVs = 0;
+    const selectedInvoiceLines: { packing: any; line: any; quantity: number }[] = [];
 
     for (const selected of selectedItems) {
       const packing = findPackingForUpdate(palletDoc, selected);
@@ -320,131 +691,78 @@ const createPartialPalletInvoice = async (req: Request, res: Response) => {
         });
       }
 
-      const manifestQuantity = toNumber(line.quantityUnit);
-      const arrivedQuantity = toNumber(line.arrivedQuantity);
       const invoicedQuantity = toNumber(line.invoicedQuantity);
-      const availableQuantity = arrivedQuantity - invoicedQuantity;
-
-      if (selected.quantity > availableQuantity) {
-        await session.abortTransaction();
-        return res.status(409).json({
-          ok: false,
-          message: "Invoice quantity exceeds arrived non-invoiced quantity",
-          mensaje: "La cantidad a facturar excede lo recibido no facturado",
-          data: {
-            ...selected,
-            manifestQuantity,
-            arrivedQuantity,
-            invoicedQuantity,
-            availableQuantity,
-          },
-        });
-      }
-
-      const unitPrice = toNumber(line.unitPrice);
-      const lineTotalSale = roundMoney(unitPrice * selected.quantity);
 
       line.invoicedQuantity = invoicedQuantity + selected.quantity;
-      const packingId = packing.packingId;
-      const lineId = line.lineId;
-      quantityByPacking.set(
-        packingId,
-        (quantityByPacking.get(packingId) || 0) + selected.quantity,
-      );
-      totalSale += lineTotalSale;
-      totalTVs += selected.quantity;
-
-      invoiceItems.push({
-        packingId,
-        lineId,
-        packingDescription: packing.palletDescription,
-        brandTV: line.model,
-        inches: line.inchs,
-        model: line.descriptionModel,
+      selectedInvoiceLines.push({
+        packing,
+        line,
         quantity: selected.quantity,
-        unitPrice,
-        totalSale: lineTotalSale,
       });
     }
 
-    let totalFreight = 0;
-    let totalRate = 0;
-    let totalADM = 0;
-    let totalService = 0;
-    let totalCosts = 0;
-
-    for (const [packingId, invoicedQuantity] of quantityByPacking.entries()) {
-      const packing = palletDoc.pallet.find((group: any) => group.packingId === packingId);
-      const packingQuantity = (packing?.pallets || []).reduce(
-        (total: number, item: any) => total + toNumber(item.quantityUnit),
-        0,
-      );
-      const ratio = packingQuantity > 0 ? invoicedQuantity / packingQuantity : 0;
-
-      totalFreight += toNumber(packing?.calcPallet?.totalFreight) * ratio;
-      totalRate += toNumber(packing?.calcPallet?.totalRate) * ratio;
-      totalADM += toNumber(packing?.calcPallet?.ADM) * ratio;
-      totalService += toNumber(packing?.calcPallet?.caribeTrans) * ratio;
-      totalCosts += toNumber(packing?.calcPallet?.totalCost) * ratio;
-    }
-
-    totalSale = roundMoney(totalSale);
-    totalFreight = roundMoney(totalFreight);
-    totalRate = roundMoney(totalRate);
-    totalADM = roundMoney(totalADM);
-    totalService = roundMoney(totalService);
-    totalCosts = roundMoney(totalCosts);
-    const totalUtility = roundMoney(totalSale - totalCosts);
-    const totalSaleNoTransport = roundMoney(totalSale + transportCost);
-
+    palletDoc.costTransport = effectiveTransportCost;
     refreshPalletStatuses(palletDoc);
     palletDoc.markModified("pallet");
     await palletDoc.save({ session });
+
+    const calculatedInvoice = buildPalletInvoiceData(
+      normalizedInvoiceMode === "OVERWRITE_EXISTING"
+        ? getCurrentPalletInvoiceLines(palletDoc)
+        : selectedInvoiceLines,
+      effectiveTransportCost,
+    );
 
     const invoicePayload = {
       client: normalizedClient,
       clientCode,
       motherGuide,
-      totalPallets: String(quantityByPacking.size),
-      totalTVs: String(totalTVs),
-      totalFreight,
-      totalRate,
-      totalADM,
-      totalService,
-      totalCosts,
-      totalSale,
-      totalUtility,
-      totalSaleNoTransport,
-      costTransport: transportCost,
       date: new Date().toISOString(),
       type: "PALLETS",
-      invoiceScope: "PARTIAL",
-      items: invoiceItems,
+      ...calculatedInvoice,
     };
+
+    if (normalizedInvoiceMode === "OVERWRITE_EXISTING" && existingPalletInvoice) {
+      const financeState = await syncInvoiceFinances(
+        existingPalletInvoice,
+        calculatedInvoice.totalSaleNoTransport,
+        normalizedClient,
+        motherGuide,
+        session,
+      );
+
+      existingPalletInvoice.set({
+        ...invoicePayload,
+        date: existingPalletInvoice.date || invoicePayload.date,
+        status: financeState.status,
+        totalPaid: financeState.totalPaid,
+      });
+
+      await existingPalletInvoice.save({ session });
+      await session.commitTransaction();
+
+      return res.status(200).json({
+        ok: true,
+        message: "Related pallet invoice updated",
+        mensaje: "Factura relacionada de pallet actualizada",
+        data: serializeInvoice(existingPalletInvoice),
+      });
+    }
 
     const createdInvoices = await InvoicesModel.create([invoicePayload], { session });
     const invoice = createdInvoices[0];
 
-    await AccountsReceivableModel.create(
-      [
-        {
-          clientName: normalizedClient,
-          motherGuide,
-          amount: totalSaleNoTransport,
-          invoiceNumber: invoice.invoiceNumber,
-        },
-      ],
-      { session },
+    const financeState = await syncInvoiceFinances(
+      invoice,
+      calculatedInvoice.totalSaleNoTransport,
+      normalizedClient,
+      motherGuide,
+      session,
     );
 
-    await AccountsCXCModel.findOneAndUpdate(
-      { clientName: normalizedClient },
-      {
-        $inc: { totalAmount: totalSaleNoTransport },
-        $set: { isActive: true },
-      },
-      { upsert: true, returnDocument: "after", runValidators: true, session },
-    );
+    invoice.status = financeState.status;
+    invoice.totalPaid = financeState.totalPaid;
+    await invoice.save({ session });
 
     await session.commitTransaction();
 
@@ -744,6 +1062,7 @@ export {
   createInvoices,
   createPartialPalletInvoice,
   getInvoices,
+  updateInvoice,
   getInvoicesByMotherGuide,
   getInvoicesByMotherGuideAndClient,
   getInvoicesForClient,

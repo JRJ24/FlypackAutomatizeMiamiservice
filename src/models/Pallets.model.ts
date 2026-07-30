@@ -185,6 +185,12 @@ const PalletsMainSchema = new Schema<IPalletsMain>(
       required: false,
       index: true,
     },
+    costTransport: {
+      type: Number,
+      required: false,
+      default: 0,
+      min: 0,
+    },
     arrivalStatus: {
       type: String,
       enum: ["IN_TRANSIT", "PARTIAL_ARRIVED", "ARRIVED", "DELIVERED"],

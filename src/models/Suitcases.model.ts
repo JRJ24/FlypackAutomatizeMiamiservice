@@ -72,6 +72,12 @@ const SuitCasesSchema = new Schema<ISuitCases>({
     required: false,
     index: true,
   },
+  costTransport: {
+    type: Number,
+    required: false,
+    default: 0,
+    min: 0,
+  },
   arrivalStatus: {
     type: String,
     enum: ["IN_TRANSIT", "ARRIVED", "DELIVERED"],

@@ -95,18 +95,26 @@ UsersSchema.pre("save", function () {
 
 UsersSchema.pre("findOneAndUpdate", function () {
   const update = this.getUpdate() as any;
+  if (Array.isArray(update)) return;
 
-  if (update.name) {
-    update.name = encrypt(safeDecrypt(update.name));
+  const target = update.$set || update;
+
+  if (target.name) {
+    target.name = encrypt(safeDecrypt(target.name));
   }
 
-  if (update.email) {
-    const plainEmail = safeDecrypt(update.email).trim().toLowerCase();
+  if (target.email) {
+    const plainEmail = safeDecrypt(target.email).trim().toLowerCase();
 
-    update.emailIndex = plainEmail;
+    target.emailIndex = crypto
+      .createHash("sha256")
+      .update(plainEmail)
+      .digest("hex");
 
-    update.email = encrypt(plainEmail);
+    target.email = encrypt(plainEmail);
   }
+
+  if (update.$set) update.$set = target;
   this.setUpdate(update);
 });
 

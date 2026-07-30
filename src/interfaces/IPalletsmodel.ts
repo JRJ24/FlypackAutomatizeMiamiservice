@@ -4,6 +4,7 @@ export interface IPalletsMain {
   motherGuide: string;
   miamiInvoiceNumber?: string;
   clientCode?: string;
+  costTransport?: number;
   arrivalStatus?: string;
   arrivedAt?: Date;
   deliveredAt?: Date;
@@ -64,6 +65,7 @@ export interface IPalletNew {
   motherGuide: string;
   miamiInvoiceNumber?: string;
   clientCode?: string;
+  costTransport?: number;
   pallet: {
     palletDescription: string;
     pallets: {

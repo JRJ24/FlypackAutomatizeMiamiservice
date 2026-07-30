@@ -54,24 +54,31 @@ palletRouter.patch(
 palletRouter.patch(
   "/arrival",
   validatJWT,
-  authorize(...ROLE_GROUPS.operations),
+  authorize(...ROLE_GROUPS.adminJdg),
   palletsController.updatePalletArrivalStatus,
 );
 
 palletRouter.patch(
   "/arrival-items",
   validatJWT,
-  authorize(...ROLE_GROUPS.operations),
+  authorize(...ROLE_GROUPS.adminJdg),
   palletsController.updatePalletPartialArrival,
 );
 
-palletRouter.put("/", validatJWT, authorize(...ROLE_GROUPS.operations), palletsController.deletePallets);
+palletRouter.put("/", validatJWT, authorize(...ROLE_GROUPS.adminJdg), palletsController.deletePallets);
 
 palletRouter.patch(
   "/itemDeleted",
   validatJWT,
-  authorize(...ROLE_GROUPS.operations),
+  authorize(...ROLE_GROUPS.adminJdg),
   palletsController.deleteItemsPallets,
+);
+
+palletRouter.patch(
+  "/items",
+  validatJWT,
+  authorize(...ROLE_GROUPS.operations),
+  palletsController.updatePalletItems,
 );
 
 export default palletRouter;

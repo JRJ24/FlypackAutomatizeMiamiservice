@@ -10,6 +10,7 @@ export const ROLES = {
 
 export const ROLE_GROUPS = {
   admin: [ROLES.ADMIN],
+  adminJdg: [ROLES.ADMIN, ROLES.JDG],
   operations: [ROLES.ADMIN, ROLES.MIAMI, ROLES.JDG],
   authenticated: [ROLES.ADMIN, ROLES.MIAMI, ROLES.JDG, ROLES.CLIENT, ROLES.USER],
 };

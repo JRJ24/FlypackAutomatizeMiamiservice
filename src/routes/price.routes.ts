@@ -26,6 +26,13 @@ priceRouter.get(
   priceController.getPriceModel
 )
 
+priceRouter.get(
+  '/lookup',
+  validatJWT,
+  authorize(...ROLE_GROUPS.operations),
+  priceController.getPriceLookup
+)
+
 
 priceRouter.put(
   '/',

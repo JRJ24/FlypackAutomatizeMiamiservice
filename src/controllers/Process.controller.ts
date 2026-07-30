@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import ProcessModel from "../models/Process.model";
 
 const ADMIN_ONLY_PATHS = ["/maintenances", "/invoices", "/finances"];
+const JDG_HIDDEN_PATHS = ["/maintenances", "/finances"];
 
 const buildVisibleProcessQuery = (req: Request) => {
   const role = (req as any).user?.role;
@@ -10,7 +11,9 @@ const buildVisibleProcessQuery = (req: Request) => {
     isActive: true,
   };
 
-  if (role !== "FLYPACKADMIN") {
+  if (role === "FLYPACKJDG") {
+    query.path = { $nin: JDG_HIDDEN_PATHS };
+  } else if (role !== "FLYPACKADMIN") {
     query.path = { $nin: ADMIN_ONLY_PATHS };
   }
 

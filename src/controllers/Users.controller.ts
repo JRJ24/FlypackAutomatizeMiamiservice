@@ -3,6 +3,7 @@ import UsersModel from "../models/Users.model";
 import { hashPassword } from "../helpers/hashpassword";
 import { Types } from "mongoose";
 import { sanitizeUser } from "../helpers/sanitizeUser";
+import { revokeUserSessions } from "../middlewares/token";
 const crypto = require("crypto");
 
 const GetUsers = async (req: Request, res: Response) => {
@@ -69,8 +70,10 @@ const getUserClient = async (req: Request, res: Response) => {
 const createUser = async (req: Request, res: Response) => {
   try {
     const { ...data } = req.body;
-    if (data.password) {
-      data.password = await hashPassword(data.password);
+    const password = typeof data.password === "string" ? data.password.trim() : "";
+
+    if (password) {
+      data.password = await hashPassword(password);
       data.mustchangePassword = false;
     } else {
       const passwordGenerated = crypto.randomBytes(6).toString("hex");
@@ -118,8 +121,16 @@ const updatePutUser = async (req: Request, res: Response) => {
       });
     }
 
-    if (data.password) {
-      data.password = await hashPassword(data.password);
+    delete data.confirmPassword;
+    const password = typeof data.password === "string" ? data.password.trim() : "";
+
+    if (password) {
+      data.password = await hashPassword(password);
+      data.mustchangePassword = false;
+      data.resetPasswordToken = undefined;
+      data.resetPasswordExpires = undefined;
+    } else {
+      delete data.password;
     }
 
     const update = await UsersModel.findByIdAndUpdate(_id, data, {
@@ -134,6 +145,10 @@ const updatePutUser = async (req: Request, res: Response) => {
         mensaje: "No data",
         data: null,
       });
+    }
+
+    if (password) {
+      await revokeUserSessions(_id);
     }
 
     return res.status(201).json({
