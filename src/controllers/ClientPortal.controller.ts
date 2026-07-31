@@ -3,10 +3,13 @@ import InventoryModel from "../models/Inventory.model";
 import PalletsModel from "../models/Pallets.model";
 import SuitcasesModel from "../models/Suitcases.model";
 import InvoicesModel from "../models/Invoices.model";
+import AccountsCXCModel from "../models/Finanzes/AccountsCXC.model";
+import AccountsReceivableModel from "../models/Finanzes/AccountsReceivable.model";
 import {
   getRequestClientIdentity,
   matchesClientIdentity,
 } from "../helpers/clientIdentity";
+import { normalizeClientName } from "../helpers/clientName";
 
 const sum = (values: number[]) =>
   values.reduce((total, value) => total + Number(value || 0), 0);
@@ -24,6 +27,7 @@ const getInvoicesForShipment = (
 const getOverview = async (req: Request, res: Response) => {
   try {
     const identity = getRequestClientIdentity((req as any).user);
+    const normalizedClientName = normalizeClientName(identity.clientName).toLowerCase();
 
     if (!identity.clientName) {
       return res.status(400).json({
@@ -34,12 +38,18 @@ const getOverview = async (req: Request, res: Response) => {
       });
     }
 
-    const [inventoryDocs, palletDocs, suitcaseDocs, invoiceDocs] = await Promise.all([
+    const [inventoryDocs, palletDocs, suitcaseDocs, invoiceDocs, cxcDocs, receivableDocs] = await Promise.all([
       InventoryModel.find({ isDisabled: false, quantity: { $gt: 0 } }).lean(),
       PalletsModel.find({ isDelete: false, isActive: true }).lean(),
       SuitcasesModel.find({ isDelete: false }).lean(),
       InvoicesModel.find().sort({ date: -1, _id: -1 }).lean(),
+      AccountsCXCModel.find({ isActive: true }).lean(),
+      AccountsReceivableModel.find({ amount: { $gt: 0 } }).sort({ date: -1, createdAt: -1 }).lean(),
     ]);
+
+    const cxcAccount = cxcDocs.find(
+      (account) => normalizeClientName(account.clientName).toLowerCase() === normalizedClientName,
+    );
 
     const inventory = inventoryDocs
       .filter((item) => matchesClientIdentity(item, "client", identity))
@@ -65,6 +75,24 @@ const getOverview = async (req: Request, res: Response) => {
         items: invoice.items || [],
         totalTVs: invoice.totalTVs,
       }));
+
+    const receivables = receivableDocs
+      .filter((receivable) => normalizeClientName(receivable.clientName).toLowerCase() === normalizedClientName)
+      .map((receivable) => {
+        const relatedInvoice = invoices.find(
+          (invoice) => String(invoice.invoiceNumber || "") === String(receivable.invoiceNumber || ""),
+        );
+
+        return {
+          id: String(receivable._id),
+          invoiceNumber: receivable.invoiceNumber,
+          motherGuide: receivable.motherGuide,
+          amount: Number(receivable.amount || 0),
+          status: receivable.status,
+          currency: receivable.currency || "RD",
+          date: relatedInvoice?.date || receivable.createdAt || receivable.date,
+        };
+      });
 
     const filteredPallets = palletDocs.filter((pallet) =>
       matchesClientIdentity(pallet, "clientName", identity),
@@ -169,6 +197,10 @@ const getOverview = async (req: Request, res: Response) => {
           invoiced,
           arrived,
           invoices: invoices.length,
+        },
+        cxc: {
+          totalAmount: Number(cxcAccount?.totalAmount || 0),
+          receivables,
         },
         inventory,
         shipments,
