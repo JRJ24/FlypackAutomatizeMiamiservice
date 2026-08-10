@@ -78,7 +78,7 @@ const adjustClientCXC = async (
         lastUpdate: new Date(),
       },
     ],
-    session ? { session } : undefined,
+    session ? { session, ordered: true } : undefined,
   );
 };
 
@@ -130,7 +130,7 @@ export const syncInvoiceFinances = async (
           status: getReceivableStatus(nextOutstanding, roundedNextTotal),
         },
       ],
-      session ? { session } : undefined,
+      session ? { session, ordered: true } : undefined,
     );
   }
 

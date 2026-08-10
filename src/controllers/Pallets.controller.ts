@@ -103,6 +103,18 @@ const rollbackInventoryUpdates = async (
   }
 };
 
+const rollbackInventoryRestores = async (
+  updates: { inventoryId: any; quantity: number }[],
+) => {
+  for (const update of [...updates].reverse()) {
+    await InventoryModel.findOneAndUpdate(
+      { _id: update.inventoryId, isDisabled: false },
+      { $inc: { quantity: -update.quantity } },
+      { runValidators: true },
+    );
+  }
+};
+
 const cleanupSavedPallet = async (
   savedPalletId: any,
   packingId: string,
@@ -270,12 +282,20 @@ const matchesMiamiRef = (value: unknown, search: string) => {
   return includesText(value, normalizedSearch) || includesText(value, search);
 };
 
-const findPalletByClientAndGuide = async (clientName: string, motherGuide: string) => {
+const findPalletByClientAndGuide = async (
+  clientName: string,
+  motherGuide: string,
+  session?: ClientSession,
+) => {
   const normalizedClient = normalizeClientName(clientName);
-  const candidates = await PalletsModel.find({
+  const request = PalletsModel.find({
     motherGuide,
     isDelete: false,
-  }).lean();
+  });
+
+  if (session) request.session(session);
+
+  const candidates = await request.lean();
 
   return candidates.find(
     (pallet) => normalizeClientName(pallet.clientName) === normalizedClient,
@@ -949,7 +969,7 @@ const createPalletsWithSession = async (
                 pallet: [newPalletSingle],
               },
             ],
-            sessionOptions(session),
+            session ? { session, ordered: true } : undefined,
           )
         )[0];
 
@@ -1155,17 +1175,40 @@ const updatePalletsInvoices = async (req: Request, res: Response) => {
   }
 };
 
-const deletePallets = async (req: Request, res: Response) => {
-  const session = await PalletsModel.startSession();
+const deletePalletsWithSession = async (
+  req: Request,
+  session?: ClientSession,
+): Promise<ApiResponse> => {
+  const restoredInventoryUpdates: { inventoryId: any; quantity: number }[] = [];
+  let deletedPalletId: any;
+  let normalizedClient = "";
+
+  const rollbackWithoutTransaction = async () => {
+    if (session) return;
+
+    if (deletedPalletId) {
+      await PalletsModel.findByIdAndUpdate(
+        deletedPalletId,
+        { isDelete: false, isActive: true, clientName: normalizedClient },
+        { runValidators: true },
+      );
+    }
+
+    if (restoredInventoryUpdates.length > 0) {
+      await rollbackInventoryRestores(restoredInventoryUpdates);
+    }
+  };
+
+  const rollbackAndReturn = async (response: ApiResponse) => {
+    await rollbackWithoutTransaction();
+    return response;
+  };
 
   try {
-    session.startTransaction();
-
     const { motherGuide, clientName } = req.body;
 
     if (!motherGuide || !clientName) {
-      await session.abortTransaction();
-      return res.status(400).json({
+      return jsonResponse(400, {
         ok: false,
         message: "Missing data",
         mensaje: "Faltan datos",
@@ -1173,11 +1216,10 @@ const deletePallets = async (req: Request, res: Response) => {
       });
     }
 
-    const palletDoc = await findPalletByClientAndGuide(clientName, motherGuide);
+    const palletDoc = await findPalletByClientAndGuide(clientName, motherGuide, session);
 
     if (!palletDoc) {
-      await session.abortTransaction();
-      return res.status(404).json({
+      return jsonResponse(404, {
         ok: false,
         message: "No found register",
         mensaje: "No se encontraron registros",
@@ -1185,7 +1227,7 @@ const deletePallets = async (req: Request, res: Response) => {
       });
     }
 
-    const normalizedClient = normalizeClientName(clientName);
+    normalizedClient = normalizeClientName(clientName);
     const restoreMovements: any[] = [];
 
     for (const disk of palletDoc.pallet || []) {
@@ -1205,31 +1247,37 @@ const deletePallets = async (req: Request, res: Response) => {
         });
 
         if (!inventoryItem) {
-          await session.abortTransaction();
-          return res.status(400).json({
+          return rollbackAndReturn(jsonResponse(400, {
             ok: false,
             message: "No restore inventory",
             mensaje: "No inventario restaurado",
             data: item,
-          });
+          }));
         }
 
         const restoredInventory = await InventoryModel.findOneAndUpdate(
           { _id: inventoryItem._id, isDisabled: false },
           { $inc: { quantity: quantityUnit } },
-          { returnDocument: "after", runValidators: true, session },
+          {
+            returnDocument: "after",
+            runValidators: true,
+            ...sessionOptions(session),
+          },
         );
 
         if (!restoredInventory) {
-          await session.abortTransaction();
-          return res.status(400).json({
+          return rollbackAndReturn(jsonResponse(400, {
             ok: false,
             message: "No restore inventory",
             mensaje: "No inventario restaurado",
             data: item,
-          });
+          }));
         }
 
+        restoredInventoryUpdates.push({
+          inventoryId: restoredInventory._id,
+          quantity: quantityUnit,
+        });
         restoreMovements.push({
           inventoryId: restoredInventory._id,
           type: "ADJUSTMENT",
@@ -1247,21 +1295,30 @@ const deletePallets = async (req: Request, res: Response) => {
     const deletedPallet = await PalletsModel.findByIdAndUpdate(
       palletDoc._id,
       { isDelete: true, isActive: false, clientName: normalizedClient },
-      { returnDocument: "after", runValidators: true, session },
+      {
+        returnDocument: "after",
+        runValidators: true,
+        ...sessionOptions(session),
+      },
     );
 
     if (!deletedPallet) {
-      await session.abortTransaction();
-      return res.status(404).json({
+      return rollbackAndReturn(jsonResponse(404, {
         ok: false,
         message: "No found register",
         mensaje: "No se encontraron registros",
         data: null,
-      });
+      }));
     }
 
+    deletedPalletId = deletedPallet._id;
+
     if (restoreMovements.length > 0) {
-      await InventoryMovementModel.create(restoreMovements, { session });
+      if (session) {
+        await InventoryMovementModel.create(restoreMovements, { session, ordered: true });
+      } else {
+        await InventoryMovementModel.create(restoreMovements);
+      }
     }
 
     await syncInvoicesForPacking({
@@ -1272,16 +1329,75 @@ const deletePallets = async (req: Request, res: Response) => {
       session,
     });
 
-    await session.commitTransaction();
-
-    return res.status(200).json({
+    return jsonResponse(200, {
       ok: true,
       message: "Deleted",
       mensaje: "Eliminado correctamente",
       data: serializePallet(deletedPallet),
     });
   } catch (error) {
-    await session.abortTransaction();
+    try {
+      await rollbackWithoutTransaction();
+    } catch (rollbackError) {
+      console.error("[PALLET DELETE ROLLBACK ERROR]", {
+        message: (rollbackError as any).message,
+        name: (rollbackError as any).name,
+        code: (rollbackError as any).code,
+      });
+    }
+
+    throw error;
+  }
+};
+
+const deletePallets = async (req: Request, res: Response) => {
+  let session: ClientSession | undefined;
+
+  try {
+    session = await PalletsModel.startSession();
+    session.startTransaction();
+
+    const result = await deletePalletsWithSession(req, session);
+
+    if (result.statusCode >= 400) {
+      await abortIfActive(session);
+    } else {
+      await session.commitTransaction();
+    }
+
+    return res.status(result.statusCode).json(result.body);
+  } catch (error) {
+    await abortIfActive(session);
+
+    if (isTransactionUnsupportedError(error)) {
+      console.warn("[PALLET DELETE TRANSACTION FALLBACK] Retrying without transaction", {
+        message: (error as any).message,
+        name: (error as any).name,
+        code: (error as any).code,
+      });
+
+      try {
+        const result = await deletePalletsWithSession(req);
+        return res.status(result.statusCode).json(result.body);
+      } catch (fallbackError) {
+        console.error("[PALLET DELETE FALLBACK ERROR]", {
+          message: (fallbackError as any).message,
+          name: (fallbackError as any).name,
+          code: (fallbackError as any).code,
+          stack: (fallbackError as any).stack,
+          body: req.body,
+        });
+      }
+    } else {
+      console.error("[PALLET DELETE ERROR]", {
+        message: (error as any).message,
+        name: (error as any).name,
+        code: (error as any).code,
+        stack: (error as any).stack,
+        body: req.body,
+      });
+    }
+
     return res.status(500).json({
       ok: false,
       message: "Error internal server",
@@ -1289,7 +1405,7 @@ const deletePallets = async (req: Request, res: Response) => {
       data: null,
     });
   } finally {
-    session.endSession();
+    session?.endSession();
   }
 };
 
@@ -1778,7 +1894,7 @@ const updatePalletItems = async (req: Request, res: Response) => {
     palletDoc.markModified("pallet");
 
     if (inventoryMovements.length > 0) {
-      await InventoryMovementModel.create(inventoryMovements, { session });
+      await InventoryMovementModel.create(inventoryMovements, { session, ordered: true });
     }
 
     const savedPallet = await palletDoc.save({ session });

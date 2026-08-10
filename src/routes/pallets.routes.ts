@@ -65,12 +65,12 @@ palletRouter.patch(
   palletsController.updatePalletPartialArrival,
 );
 
-palletRouter.put("/", validatJWT, authorize(...ROLE_GROUPS.adminJdg), palletsController.deletePallets);
+palletRouter.put("/", validatJWT, authorize(...ROLE_GROUPS.operations), palletsController.deletePallets);
 
 palletRouter.patch(
   "/itemDeleted",
   validatJWT,
-  authorize(...ROLE_GROUPS.adminJdg),
+  authorize(...ROLE_GROUPS.operations),
   palletsController.deleteItemsPallets,
 );
 

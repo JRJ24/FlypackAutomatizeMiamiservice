@@ -282,7 +282,7 @@ const createSuitCases = async (req: Request, res: Response) => {
         isDelete: false,
       };
 
-      const created = await SuitcasesModel.create([payloadSuit], { session });
+      const created = await SuitcasesModel.create([payloadSuit], { session, ordered: true });
       suitCases = created[0];
     }
 
@@ -295,7 +295,7 @@ const createSuitCases = async (req: Request, res: Response) => {
         referenceId: String(suitCases._id),
         createdBy: (req as any).user?._id,
       })),
-      { session },
+      { session, ordered: true },
     );
 
     await syncInvoicesForPacking({
@@ -762,7 +762,7 @@ const updateSuitCases = async (req: Request, res: Response) => {
                 createdBy: (req as any).user?._id,
               },
             ],
-            { session },
+            { session, ordered: true },
           );
 
           const nextInventoryItem = await findInventoryItemForClient({
@@ -821,7 +821,7 @@ const updateSuitCases = async (req: Request, res: Response) => {
                 createdBy: (req as any).user?._id,
               },
             ],
-            { session },
+            { session, ordered: true },
           );
         } else if (quantityDelta !== 0) {
           const inventoryItem = await findInventoryItemForClient({
@@ -884,7 +884,7 @@ const updateSuitCases = async (req: Request, res: Response) => {
                 createdBy: (req as any).user?._id,
               },
             ],
-            { session },
+            { session, ordered: true },
           );
         }
 
@@ -1122,7 +1122,7 @@ const deleteSuitCases = async (req: Request, res: Response) => {
     }
 
     if (restoreMovements.length > 0) {
-      await InventoryMovementModel.create(restoreMovements, { session });
+      await InventoryMovementModel.create(restoreMovements, { session, ordered: true });
     }
 
     await syncInvoicesForPacking({

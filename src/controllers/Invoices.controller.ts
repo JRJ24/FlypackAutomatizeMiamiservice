@@ -501,7 +501,7 @@ const createInvoices = async (req: Request, res: Response) => {
     data.totalUtility = roundMoney(data.totalSaleNoTransport - data.totalCosts);
     data.date = data.date || new Date().toISOString();
 
-    const createdInvoices = await InvoicesModel.create([data], { session });
+    const createdInvoices = await InvoicesModel.create([data], { session, ordered: true });
     const invoice = createdInvoices[0];
 
     if (!invoice) {
@@ -749,7 +749,7 @@ const createPartialPalletInvoice = async (req: Request, res: Response) => {
       });
     }
 
-    const createdInvoices = await InvoicesModel.create([invoicePayload], { session });
+    const createdInvoices = await InvoicesModel.create([invoicePayload], { session, ordered: true });
     const invoice = createdInvoices[0];
 
     const financeState = await syncInvoiceFinances(
