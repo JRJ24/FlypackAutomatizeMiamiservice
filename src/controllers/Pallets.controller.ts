@@ -1768,6 +1768,10 @@ const updatePalletItems = async (req: Request, res: Response) => {
       const weightLB = toNumber(packing.calcPallet?.weightLB);
 
       packing.calcPallet = await CalcCost(weightLB, maintenance, totalPrice);
+      packing.palletDescription = String(packing.palletDescription || "").replace(
+        /\([^)]*LBS\)/i,
+        `(${weightLB} LBS)`,
+      );
     }
 
     refreshPalletStatuses(palletDoc);
